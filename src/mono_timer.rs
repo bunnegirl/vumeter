@@ -1,5 +1,5 @@
 pub use fugit::{self, ExtU32};
-use rtic_monotonic::Monotonic;
+use rtic::rtic_monotonic::Monotonic;
 use stm32f4xx_hal::{
     pac::{RCC, TIM2, TIM5},
     rcc::Clocks,
