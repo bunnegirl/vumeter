@@ -166,7 +166,11 @@ mod app {
         }
     }
 
-    #[task(binds = TIM1_CC, shared = [headphones_left], local = [headphones_left_pwm])]
+    #[task(
+        binds = TIM1_CC,
+        shared = [headphones_left],
+        local = [headphones_left_pwm]
+    )]
     fn headphones_left(mut cx: headphones_left::Context) {
         let value = cx.local.headphones_left_pwm.get_duty_cycle();
 
@@ -185,7 +189,11 @@ mod app {
         });
     }
 
-    #[task(binds = TIM2, shared = [headphones_right], local = [headphones_right_pwm])]
+    #[task(
+        binds = TIM2,
+        shared = [headphones_right],
+        local = [headphones_right_pwm]
+    )]
     fn headphones_right(mut cx: headphones_right::Context) {
         let value = cx.local.headphones_right_pwm.get_duty_cycle();
 
@@ -205,7 +213,11 @@ mod app {
         });
     }
 
-    #[task(binds = TIM3, shared = [speakers_left], local = [speakers_left_pwm])]
+    #[task(
+        binds = TIM3,
+        shared = [speakers_left],
+        local = [speakers_left_pwm]
+    )]
     fn speakers_left(mut cx: speakers_left::Context) {
         let value = cx.local.speakers_left_pwm.get_duty_cycle();
 
@@ -224,7 +236,11 @@ mod app {
         });
     }
 
-    #[task(binds = TIM4, shared = [speakers_right], local = [speakers_right_pwm])]
+    #[task(
+        binds = TIM4,
+        shared = [speakers_right],
+        local = [speakers_right_pwm]
+    )]
     fn speakers_right(mut cx: speakers_right::Context) {
         let value = cx.local.speakers_right_pwm.get_duty_cycle();
 
@@ -244,7 +260,16 @@ mod app {
         });
     }
 
-    #[task(shared = [headphones_left, headphones_right], local = [headphones_leds_0_pin, headphones_leds_1_pin, headphones_leds_2_pin, headphones_leds_3_pin, headphones_leds_4_pin, headphones_leds_5_pin])]
+    #[task(
+        shared = [headphones_left, headphones_right],
+        local = [
+            headphones_leds_0_pin,
+            headphones_leds_1_pin,
+            headphones_leds_2_pin,
+            headphones_leds_3_pin,
+            headphones_leds_4_pin,
+            headphones_leds_5_pin
+        ])]
     fn headphones(cx: headphones::Context) {
         let mut leds = [
             (
@@ -292,7 +317,17 @@ mod app {
         headphones::spawn_after(REFRESH.micros()).unwrap();
     }
 
-    #[task(shared = [speakers_left, speakers_right], local = [speakers_leds_0_pin, speakers_leds_1_pin, speakers_leds_2_pin, speakers_leds_3_pin, speakers_leds_4_pin, speakers_leds_5_pin])]
+    #[task(
+        shared = [speakers_left, speakers_right],
+        local = [
+            speakers_leds_0_pin,
+            speakers_leds_1_pin,
+            speakers_leds_2_pin,
+            speakers_leds_3_pin,
+            speakers_leds_4_pin,
+            speakers_leds_5_pin
+        ]
+    )]
     fn speakers(cx: speakers::Context) {
         let mut leds = [
             (
