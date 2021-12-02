@@ -1,5 +1,5 @@
-use fugit::{ExtU32, Instant};
 use crate::app::monotonics;
+use fugit::{ExtU32, Instant};
 
 #[derive(Debug)]
 pub struct Debounce<const DELAY_MS: u32>(pub Option<Instant<u32, 1_u32, 8000000_u32>>);

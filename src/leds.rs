@@ -1,10 +1,7 @@
-use stm32f4xx_hal::
-    hal::digital::v2::OutputPin;
 use core::convert::Infallible;
-use rtt_target::{rprintln};
+use stm32f4xx_hal::hal::digital::v2::OutputPin;
 
 pub type LedLevel = Option<u8>;
-pub type LedsPattern = [bool; 6];
 
 pub struct Leds<P1, P2, P3, P4, P5, P6>(pub P1, pub P2, pub P3, pub P4, pub P5, pub P6)
 where
@@ -38,11 +35,13 @@ where
 
     pub fn set_level(&mut self, level: LedLevel) {
         for index in 0..6 {
-            let led = self.get_led(Some(index));
-
-            if let (Some(level), Some(led)) = (level, led) {
-                if level >= index {
-                    led.set_high().unwrap();
+            if let Some(led) = self.get_led(Some(index)) {
+                if let Some(level) = level {
+                    if level >= index {
+                        led.set_high().unwrap();
+                    } else {
+                        led.set_low().unwrap();
+                    }
                 } else {
                     led.set_low().unwrap();
                 }
@@ -50,11 +49,15 @@ where
         }
     }
 
-    pub fn set_pattern(&mut self, pattern: LedsPattern) {
-        for (index, high) in pattern.iter().enumerate() {
-            if let Some(led) = self.get_led(Some(index as u8)) {
-                if *high {
-                    led.set_high().unwrap();
+    pub fn set_peak(&mut self, level: LedLevel) {
+        for index in 0..6 {
+            if let Some(led) = self.get_led(Some(index)) {
+                if let Some(level) = level {
+                    if level == index {
+                        led.set_high().unwrap();
+                    } else {
+                        led.set_low().unwrap();
+                    }
                 } else {
                     led.set_low().unwrap();
                 }
@@ -62,12 +65,10 @@ where
         }
     }
 
-    pub fn reset_pattern(&mut self, pattern: LedsPattern) {
-        for (index, high) in pattern.iter().enumerate() {
-            if *high {
-                if let Some(led) = self.get_led(Some(index as u8)) {
-                    led.set_low().unwrap();
-                }
+    pub fn clear(&mut self) {
+        for index in 0..6 {
+            if let Some(led) = self.get_led(Some(index)) {
+                led.set_low().unwrap();
             }
         }
     }

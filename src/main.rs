@@ -12,8 +12,8 @@ use crate::leds::*;
 use crate::mono_timer::MonoTimer;
 use crate::state::*;
 use core::panic::PanicInfo;
+use fugit::ExtU32;
 use rtt_target::{rprintln, rtt_init_print};
-use fugit::{ExtU32};
 use stm32f4xx_hal::{
     gpio::{gpioa::*, gpiob::*, *},
     pac,
@@ -50,7 +50,9 @@ mod app {
 
     #[local]
     struct Local {
-        mute_input: PA0<Input<PullUp>>,
+        mute_toggle: PA0<Input<PullUp>>,
+        mute_output: PB0<Output<PushPull>>,
+        mode_toggle: PA1<Input<PullUp>>,
         left_input: PwmInput<TIM2, PA5<Alternate<1>>>,
         right_input: PwmInput<TIM3, PA6<Alternate<2>>>,
         left_leds: Leds<
@@ -92,11 +94,21 @@ mod app {
         let gpioa = cx.device.GPIOA.split();
         let gpiob = cx.device.GPIOB.split();
 
-        let mut mute_input = gpioa.pa0.into_pull_up_input();
+        let mut mute_toggle = gpioa.pa0.into_pull_up_input();
 
-        mute_input.make_interrupt_source(&mut syscfg);
-        mute_input.enable_interrupt(&mut cx.device.EXTI);
-        mute_input.trigger_on_edge(&mut cx.device.EXTI, Edge::Falling);
+        mute_toggle.make_interrupt_source(&mut syscfg);
+        mute_toggle.enable_interrupt(&mut cx.device.EXTI);
+        mute_toggle.trigger_on_edge(&mut cx.device.EXTI, Edge::Falling);
+
+        let mut mute_output = gpiob.pb0.into_push_pull_output();
+
+        mute_output.set_high();
+
+        let mut mode_toggle = gpioa.pa1.into_pull_up_input();
+
+        mode_toggle.make_interrupt_source(&mut syscfg);
+        mode_toggle.enable_interrupt(&mut cx.device.EXTI);
+        mode_toggle.trigger_on_edge(&mut cx.device.EXTI, Edge::Falling);
 
         let left_input = HalTimer::new(cx.device.TIM2, &clocks)
             .pwm_input(PWM_FREQUENCY.khz(), gpioa.pa5.into_alternate());
@@ -125,9 +137,13 @@ mod app {
         animate::spawn().ok();
 
         (
-            Shared { state: State::Monitor },
+            Shared {
+                state: State::Show { mode: Levels },
+            },
             Local {
-                mute_input,
+                mute_toggle,
+                mute_output,
+                mode_toggle,
                 left_leds,
                 left_input,
                 right_input,
@@ -144,16 +160,23 @@ mod app {
         }
     }
 
-    #[task(shared = [state], local = [left_leds, right_leds])]
+    #[task(
+        shared = [state],
+        local = [mute_output, left_leds, right_leds],
+        priority = 5
+    )]
     fn dispatch(mut cx: dispatch::Context, msg: Message) {
         let mut state = cx.shared.state.lock(|state| *state);
 
-        if let Some(new_state) = state.dispatch(&mut cx, msg) {
+        if let Some(new_state) = state.dispatch(&mut cx.local, msg) {
             cx.shared.state.lock(|state| *state = new_state);
         }
     }
 
-    #[task(local = [interval: u32 = 0], priority = 2)]
+    #[task(
+        local = [interval: u32 = 0],
+        priority = 6
+    )]
     fn animate(cx: animate::Context) {
         *cx.local.interval += 1;
 
@@ -161,15 +184,39 @@ mod app {
         dispatch::spawn(Animate(*cx.local.interval)).ok();
     }
 
-    #[task(binds = EXTI0, local = [
-        mute_input,
-        debouncer: Debounce<150> = Debounce(None)
-    ])]
+    #[task(
+        binds = EXTI0,
+        local = [
+            mute_toggle,
+            debouncer: Debounce<150> = Debounce(None)
+        ],
+        priority = 9
+    )]
     fn toggle_mute(cx: toggle_mute::Context) {
-        cx.local.mute_input.clear_interrupt_pending_bit();
+        cx.local.mute_toggle.clear_interrupt_pending_bit();
 
         if !cx.local.debouncer.is_bouncing() {
             dispatch::spawn(ToggleMute).ok();
+
+            cx.local.debouncer.reset();
+        } else {
+            cx.local.debouncer.update();
+        }
+    }
+
+    #[task(
+        binds = EXTI1,
+        local = [
+            mode_toggle,
+            debouncer: Debounce<150> = Debounce(None)
+        ],
+        priority = 9
+    )]
+    fn toggle_mode(cx: toggle_mode::Context) {
+        cx.local.mode_toggle.clear_interrupt_pending_bit();
+
+        if !cx.local.debouncer.is_bouncing() {
+            dispatch::spawn(ToggleMode).ok();
 
             cx.local.debouncer.reset();
         } else {
@@ -185,6 +232,6 @@ mod app {
         let left = cx.local.left_input.get_duty_cycle();
         let right = cx.local.right_input.get_duty_cycle();
 
-        dispatch::spawn(SetLevels(left, right)).ok();
+        dispatch::spawn(Update(left, right)).ok();
     }
 }

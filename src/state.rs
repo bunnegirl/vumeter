@@ -1,8 +1,9 @@
 use crate::leds::*;
 pub use Message::*;
+pub use Mode::*;
 pub use State::*;
 
-const MUTED_INDICATOR: LedsPattern = [false, false, false, false, false, true];
+type Resources<'a> = crate::app::dispatch::LocalResources<'a>;
 
 fn duty_cycle_to_level(value: f32) -> LedLevel {
     match value {
@@ -17,52 +18,103 @@ fn duty_cycle_to_level(value: f32) -> LedLevel {
     }
 }
 
+fn update_levels(left: f32, right: f32, res: &mut Resources) {
+    res.left_leds.set_level(duty_cycle_to_level(left));
+    res.right_leds.set_level(duty_cycle_to_level(right));
+}
+
+fn update_peaks(left: f32, right: f32, res: &mut Resources) {
+    res.left_leds.set_peak(duty_cycle_to_level(left));
+    res.right_leds.set_peak(duty_cycle_to_level(right));
+}
+
+fn mute(high: bool, res: &mut Resources) {
+    res.mute_output.set_low();
+
+    if high {
+        res.left_leds.set_peak(Some(5));
+        res.right_leds.set_peak(Some(5));
+    } else {
+        res.left_leds.clear();
+        res.right_leds.clear();
+    }
+}
+
+fn unmute(res: &mut Resources) {
+    res.mute_output.set_high();
+    res.left_leds.clear();
+    res.right_leds.clear();
+}
+
 pub enum Message {
     Animate(u32),
     ToggleMute,
-    SetLevels(f32, f32),
+    ToggleMode,
+    Update(f32, f32),
+}
+
+#[derive(Clone, Copy)]
+pub enum Mode {
+    Levels,
+    Peaks,
 }
 
 #[derive(Clone, Copy)]
 pub enum State {
-    Monitor,
-    Muted {high: bool},
+    Show { mode: Mode },
+    Muted { mode: Mode, high: bool },
 }
 
 impl State {
-    pub fn dispatch(&mut self, cx: &mut crate::app::dispatch::Context, msg: Message) -> Option<Self> {
+    pub fn dispatch(
+        &mut self,
+        res: &mut crate::app::dispatch::LocalResources,
+        msg: Message,
+    ) -> Option<Self> {
         match (self, msg) {
-            (Monitor, SetLevels(left, right)) => {
-                cx.local.left_leds.set_level(duty_cycle_to_level(left));
-                cx.local.right_leds.set_level(duty_cycle_to_level(right));
+            // update levels
+            (Show { mode: Levels }, Update(left, right)) => {
+                update_levels(left, right, res);
 
                 None
             }
-            (Monitor, ToggleMute) => {
-                cx.local.left_leds.set_pattern(MUTED_INDICATOR);
-                cx.local.right_leds.set_pattern(MUTED_INDICATOR);
 
-                Some(Muted { high: true })
-            }
-            (Muted { .. }, ToggleMute) => {
-                cx.local.left_leds.reset_pattern(MUTED_INDICATOR);
-                cx.local.right_leds.reset_pattern(MUTED_INDICATOR);
+            // switch to peaks mode
+            (Show { mode: Levels }, ToggleMode) => Some(Show { mode: Peaks }),
 
-                Some(Monitor)
+            // update peaks
+            (Show { mode: Peaks }, Update(left, right)) => {
+                update_peaks(left, right, res);
+
+                None
             }
-            (Muted { mut high }, Animate(_)) => {
+
+            // switch to levels mode
+            (Show { mode: Peaks }, ToggleMode) => Some(Show { mode: Levels }),
+
+            // unmute audio
+            (Muted { mode, .. }, ToggleMute) => {
+                unmute(res);
+
+                Some(Show { mode: *mode })
+            }
+
+            // mute audio
+            (Show { mode }, ToggleMute) => {
+                mute(true, res);
+
+                Some(Muted { high: true, mode: *mode })
+            }
+
+            // animate mute indicator
+            (Muted { mut high, mode }, Animate(_)) => {
                 high = !high;
 
-                if high {
-                    cx.local.left_leds.set_pattern(MUTED_INDICATOR);
-                    cx.local.right_leds.set_pattern(MUTED_INDICATOR);
-                } else {
-                    cx.local.left_leds.reset_pattern(MUTED_INDICATOR);
-                    cx.local.right_leds.reset_pattern(MUTED_INDICATOR);
-                }
+                mute(high, res);
 
-                Some(Muted { high })
+                Some(Muted { high, mode: *mode })
             }
+
             _ => None,
         }
     }
