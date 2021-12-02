@@ -24,7 +24,7 @@ use stm32f4xx_hal::{
 };
 
 const PWM_FREQUENCY: u32 = 6;
-const ANIMATION_INTERVAL: u32 = 2;
+const ANIMATION_INTERVAL: u32 = 100;
 
 #[inline(never)]
 #[panic_handler]
@@ -36,7 +36,7 @@ fn panic(info: &PanicInfo) -> ! {
     }
 }
 
-#[rtic::app(device = stm32f4xx_hal::pac, dispatchers = [EXTI3, EXTI4])]
+#[rtic::app(device = stm32f4xx_hal::pac, dispatchers = [EXTI2, EXTI3, EXTI4])]
 mod app {
     use super::*;
 
@@ -46,6 +46,7 @@ mod app {
     #[shared]
     struct Shared {
         state: State,
+        animation_enabled: bool,
     }
 
     #[local]
@@ -134,11 +135,10 @@ mod app {
             gpiob.pb8.into_push_pull_output(),
         );
 
-        animate::spawn().ok();
-
         (
             Shared {
                 state: State::Show { mode: Levels },
+                animation_enabled: false,
             },
             Local {
                 mute_toggle,
@@ -174,14 +174,40 @@ mod app {
     }
 
     #[task(
-        local = [interval: u32 = 0],
+        shared = [animation_enabled]
+    )]
+    fn start_animation(mut cx: start_animation::Context) {
+        cx.shared.animation_enabled.lock(|enabled| {
+            *enabled = true;
+        });
+
+        animation_frame::spawn_after(ANIMATION_INTERVAL.millis()).ok();
+    }
+
+    #[task(
+        shared = [animation_enabled],
+        local = [counter: u32 = 0],
         priority = 6
     )]
-    fn animate(cx: animate::Context) {
-        *cx.local.interval += 1;
+    fn animation_frame(mut cx: animation_frame::Context) {
+        let enabled = cx.shared.animation_enabled.lock(|enabled| *enabled);
 
-        animate::spawn_after(ANIMATION_INTERVAL.secs()).ok();
-        dispatch::spawn(Animate(*cx.local.interval)).ok();
+        if enabled {
+            animation_frame::spawn_after(ANIMATION_INTERVAL.millis()).ok();
+        }
+
+        dispatch::spawn(AnimationFrame(*cx.local.counter)).ok();
+
+        *cx.local.counter += 1;
+    }
+
+    #[task(
+        shared = [animation_enabled]
+    )]
+    fn stop_animation(mut cx: stop_animation::Context) {
+        cx.shared.animation_enabled.lock(|enabled| {
+            *enabled = false;
+        });
     }
 
     #[task(

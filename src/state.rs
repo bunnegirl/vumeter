@@ -16,6 +16,8 @@ fn update_peaks(left: f32, right: f32, res: &mut Resources) {
 }
 
 fn mute(high: bool, res: &mut Resources) {
+    crate::app::start_animation::spawn().ok();
+
     res.mute_output.set_low();
 
     if high {
@@ -28,13 +30,16 @@ fn mute(high: bool, res: &mut Resources) {
 }
 
 fn unmute(res: &mut Resources) {
+    crate::app::stop_animation::spawn().ok();
+
     res.mute_output.set_high();
+
     res.left_leds.clear();
     res.right_leds.clear();
 }
 
 pub enum Message {
-    Animate(u32),
+    AnimationFrame(u32),
     ToggleMute,
     ToggleMode,
     Update(f32, f32),
@@ -88,14 +93,16 @@ impl State {
 
             // mute audio
             (Show { mode }, ToggleMute) => {
-                mute(true, res);
+                mute(false, res);
 
-                Some(Muted { high: true, mode: *mode })
+                Some(Muted { high: false, mode: *mode })
             }
 
             // animate mute indicator
-            (Muted { mut high, mode }, Animate(_)) => {
-                high = !high;
+            (Muted { mut high, mode }, AnimationFrame(counter)) => {
+                if counter % 20 == 0 {
+                    high = !high;
+                }
 
                 mute(high, res);
 
