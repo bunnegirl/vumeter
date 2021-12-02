@@ -181,24 +181,21 @@ mod app {
             *enabled = true;
         });
 
-        animation_frame::spawn_after(ANIMATION_INTERVAL.millis()).ok();
+        animation_frame::spawn_after(ANIMATION_INTERVAL.millis(), 0).ok();
     }
 
     #[task(
         shared = [animation_enabled],
-        local = [counter: u32 = 0],
         priority = 6
     )]
-    fn animation_frame(mut cx: animation_frame::Context) {
+    fn animation_frame(mut cx: animation_frame::Context, counter: u32) {
         let enabled = cx.shared.animation_enabled.lock(|enabled| *enabled);
 
         if enabled {
-            animation_frame::spawn_after(ANIMATION_INTERVAL.millis()).ok();
+            animation_frame::spawn_after(ANIMATION_INTERVAL.millis(), counter + 1).ok();
         }
 
-        dispatch::spawn(AnimationFrame(*cx.local.counter)).ok();
-
-        *cx.local.counter += 1;
+        dispatch::spawn(AnimationFrame(counter)).ok();
     }
 
     #[task(
