@@ -5,35 +5,22 @@ pub use State::*;
 
 type Resources<'a> = crate::app::dispatch::LocalResources<'a>;
 
-fn duty_cycle_to_level(value: f32) -> LedLevel {
-    match value {
-        x if x > 99.0 => None,
-        x if x > 66.0 => Some(5),
-        x if x > 55.0 => Some(4),
-        x if x > 44.0 => Some(3),
-        x if x > 33.0 => Some(2),
-        x if x > 22.0 => Some(1),
-        x if x > 11.0 => Some(0),
-        _ => None,
-    }
-}
-
 fn update_levels(left: f32, right: f32, res: &mut Resources) {
-    res.left_leds.set_level(duty_cycle_to_level(left));
-    res.right_leds.set_level(duty_cycle_to_level(right));
+    res.left_leds.set(LedPattern::from(left));
+    res.right_leds.set(LedPattern::from(right));
 }
 
 fn update_peaks(left: f32, right: f32, res: &mut Resources) {
-    res.left_leds.set_peak(duty_cycle_to_level(left));
-    res.right_leds.set_peak(duty_cycle_to_level(right));
+    res.left_leds.set(LedPattern::from(left).peak());
+    res.right_leds.set(LedPattern::from(right).peak());
 }
 
 fn mute(high: bool, res: &mut Resources) {
     res.mute_output.set_low();
 
     if high {
-        res.left_leds.set_peak(Some(5));
-        res.right_leds.set_peak(Some(5));
+        res.left_leds.set(LedPattern::from(5).peak());
+        res.right_leds.set(LedPattern::from(5).peak());
     } else {
         res.left_leds.clear();
         res.right_leds.clear();
