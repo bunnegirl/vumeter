@@ -2,11 +2,13 @@
 #![no_std]
 #![feature(trait_alias)]
 
+mod buffer;
 mod debounce;
 mod leds;
 mod mono_timer;
 mod state;
 
+use crate::buffer::*;
 use crate::debounce::*;
 use crate::leds::*;
 use crate::mono_timer::MonoTimer;
@@ -25,6 +27,7 @@ use stm32f4xx_hal::{
 
 const PWM_FREQUENCY: u32 = 6;
 const ANIMATION_INTERVAL: u32 = 100;
+const DISPLAY_UPDATE: u32 = 30;
 
 #[inline(never)]
 #[panic_handler]
@@ -47,6 +50,7 @@ mod app {
     struct Shared {
         state: State,
         animation_enabled: bool,
+        buffer: Buffer,
     }
 
     #[local]
@@ -135,10 +139,13 @@ mod app {
             gpiob.pb8.into_push_pull_output(),
         );
 
+        display_levels::spawn_after(DISPLAY_UPDATE.millis()).ok();
+
         (
             Shared {
                 state: State::Show { mode: Levels },
                 animation_enabled: false,
+                buffer: Buffer::new(),
             },
             Local {
                 mute_toggle,
@@ -249,12 +256,32 @@ mod app {
 
     #[task(
         binds = TIM2,
-        local = [left_input, right_input,]
+        shared = [buffer],
+        local = [
+            left_input,
+            right_input,
+        ],
+        priority = 2
     )]
-    fn monitor_inputs(cx: monitor_inputs::Context) {
+    fn monitor_inputs(mut cx: monitor_inputs::Context) {
         let left = cx.local.left_input.get_duty_cycle();
         let right = cx.local.right_input.get_duty_cycle();
 
-        dispatch::spawn(Update(left, right)).ok();
+        cx.shared
+            .buffer
+            .lock(|buffer| buffer.push((left, right)).ok());
+    }
+
+    #[task(shared = [buffer])]
+    fn display_levels(mut cx: display_levels::Context) {
+        display_levels::spawn_after(DISPLAY_UPDATE.millis()).ok();
+
+        cx.shared.buffer.lock(|buffer| {
+            let (left, right) = buffer.avg();
+
+            dispatch::spawn(Update(left, right)).ok();
+
+            *buffer = Buffer::new();
+        });
     }
 }
