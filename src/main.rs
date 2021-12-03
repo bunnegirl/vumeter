@@ -1,6 +1,5 @@
 #![no_main]
 #![no_std]
-#![feature(trait_alias)]
 
 mod buffer;
 mod debounce;
@@ -50,7 +49,7 @@ mod app {
     struct Shared {
         state: State,
         animation_enabled: bool,
-        buffer: Buffer,
+        buffer: (HistoryBuffer<f32, 500>, HistoryBuffer<f32, 500>),
     }
 
     #[local]
@@ -145,7 +144,7 @@ mod app {
             Shared {
                 state: State::Show { mode: Levels },
                 animation_enabled: false,
-                buffer: Buffer::new(),
+                buffer: (Buffer::new(), Buffer::new()),
             },
             Local {
                 mute_toggle,
@@ -267,21 +266,18 @@ mod app {
         let left = cx.local.left_input.get_duty_cycle();
         let right = cx.local.right_input.get_duty_cycle();
 
-        cx.shared
-            .buffer
-            .lock(|buffer| buffer.push((left, right)).ok());
+        cx.shared.buffer.lock(|(left_buf, right_buf)| {
+            left_buf.write(left);
+            right_buf.write(right);
+        });
     }
 
     #[task(shared = [buffer])]
     fn display_levels(mut cx: display_levels::Context) {
         display_levels::spawn_after(DISPLAY_UPDATE.millis()).ok();
 
-        cx.shared.buffer.lock(|buffer| {
-            let (left, right) = buffer.avg();
-
-            dispatch::spawn(Update(left, right)).ok();
-
-            *buffer = Buffer::new();
+        cx.shared.buffer.lock(|(left_buf, right_buf)| {
+            dispatch::spawn(Update(left_buf.avg(), right_buf.avg())).ok();
         });
     }
 }
