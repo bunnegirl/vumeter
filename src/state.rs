@@ -1,18 +1,34 @@
 use crate::leds::*;
 pub use Message::*;
-pub use Mode::*;
+pub use MeterMode::*;
 pub use State::*;
 
-type Resources<'a> = crate::app::dispatch::LocalResources<'a>;
+type Resources<'a> = crate::app::message::LocalResources<'a>;
 
-fn update_levels(left: f32, right: f32, res: &mut Resources) {
-    res.left_leds.set(LedPattern::from(left));
-    res.right_leds.set(LedPattern::from(right));
+fn idle_start() {
+    crate::app::start_animation::spawn().ok();
 }
 
-fn update_peaks(left: f32, right: f32, res: &mut Resources) {
-    res.left_leds.set(LedPattern::from(left).peak());
-    res.right_leds.set(LedPattern::from(right).peak());
+fn idle_animation(level: u8, res: &mut Resources) {
+    res.left_leds.set(LedPattern::from(level).peak());
+    res.right_leds.set(LedPattern::from(level).peak());
+}
+
+fn idle_stop() {
+    crate::app::stop_animation::spawn().ok();
+}
+
+fn meter(mode: MeterMode, left: f32, right: f32, res: &mut Resources) {
+    let mut left = LedPattern::from(left);
+    let mut right = LedPattern::from(right);
+
+    if let Peaks = mode {
+        left = left.peak();
+        right = right.peak();
+    }
+    
+    res.left_leds.set(left);
+    res.right_leds.set(right);
 }
 
 fn mute(high: bool, res: &mut Resources) {
@@ -38,61 +54,106 @@ fn unmute(res: &mut Resources) {
     res.right_leds.clear();
 }
 
+#[derive(Debug)]
 pub enum Message {
+    Init,
+    Timeout,
     AnimationFrame(u32),
     ToggleMute,
     ToggleMode,
     Update(f32, f32),
 }
 
-#[derive(Clone, Copy)]
-pub enum Mode {
+#[derive(Debug, Clone, Copy)]
+pub enum MeterMode {
     Levels,
     Peaks,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum State {
-    Show { mode: Mode },
-    Muted { mode: Mode, high: bool },
+    Uninitialised,
+    Idle { level: u8, up: bool },
+    Meter { mode: MeterMode },
+    Muted { mode: MeterMode, high: bool },
 }
 
 impl State {
-    pub fn dispatch(
+    pub fn message(
         &mut self,
-        res: &mut crate::app::dispatch::LocalResources,
+        res: &mut Resources,
         msg: Message,
     ) -> Option<Self> {
         match (self, msg) {
-            // update levels
-            (Show { mode: Levels }, Update(left, right)) => {
-                update_levels(left, right, res);
+            // set initial state
+            (Uninitialised, Init) => {
+                Some(Meter { mode: Levels })
+            }
+
+            // start idle animation
+            (Meter { .. }, Timeout) => {
+                idle_start();
+
+                Some(Idle { level: 5, up: false })
+            }
+
+            // idle animation
+            (Idle { level, up }, AnimationFrame(_)) => {
+                let (level, up) = if !*up {
+                    // go back up
+                    if *level == 0 {
+                        (1, true)
+                    } else {
+                        (*level - 1, false)
+                    }
+                } else {
+                    // go back down
+                    if *level == 5 {
+                        (4, false)
+                    } else {
+                        (*level + 1, true)
+                    }
+                };
+
+                idle_animation(level, res);
+                
+                Some(Idle { level, up })
+            }
+
+            // stop idle animation
+            (Idle { .. }, Update(left, right)) => {
+                if left > 0.0 || right > 0.0 {
+                    idle_stop();
+                    meter(Levels, left, right, res);
+    
+                    Some(Meter { mode: Levels })
+                } else {
+                    None
+                }
+            }
+
+            // update meter
+            (Meter { mode }, Update(left, right)) => {
+                meter(*mode, left, right, res);
 
                 None
             }
 
             // switch to peaks mode
-            (Show { mode: Levels }, ToggleMode) => Some(Show { mode: Peaks }),
-
-            // update peaks
-            (Show { mode: Peaks }, Update(left, right)) => {
-                update_peaks(left, right, res);
-
-                None
-            }
+            (Meter { mode: Levels }, ToggleMode) => Some(Meter { mode: Peaks }),
 
             // switch to levels mode
-            (Show { mode: Peaks }, ToggleMode) => Some(Show { mode: Levels }),
+            (Meter { mode: Peaks }, ToggleMode) => Some(Meter { mode: Levels }),
 
             // unmute audio
             (Muted { mode, .. }, ToggleMute) => {
                 unmute(res);
 
-                Some(Show { mode: *mode })
+                Some(Meter { mode: *mode })
             }
 
             // mute audio
-            (Show { mode }, ToggleMute) => {
+            (Meter { mode }, ToggleMute) => {
                 mute(false, res);
 
                 Some(Muted {

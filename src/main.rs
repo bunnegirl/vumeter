@@ -13,7 +13,7 @@ use crate::leds::*;
 use crate::mono_timer::MonoTimer;
 use crate::state::*;
 use core::panic::PanicInfo;
-use fugit::ExtU32;
+use fugit::{ExtU32, Instant};
 use rtt_target::{rprintln, rtt_init_print};
 use stm32f4xx_hal::{
     gpio::{gpioa::*, gpiob::*, *},
@@ -24,9 +24,18 @@ use stm32f4xx_hal::{
     timer::Timer as HalTimer,
 };
 
+/// frequency of dsp board's pwm signal (in kilohertz)
 const PWM_FREQUENCY: u32 = 6;
+
+/// how fast should animation frames play (in milliseconds)
 const ANIMATION_INTERVAL: u32 = 100;
+
+/// how frequently should the display update (in milliseconds)
 const DISPLAY_UPDATE: u32 = 30;
+
+/// length of time (in seconds) before idle animation starts
+/// playing when no signal is detected.
+const DISPLAY_TIMEOUT: u32 = 30;
 
 #[inline(never)]
 #[panic_handler]
@@ -50,6 +59,7 @@ mod app {
         state: State,
         animation_enabled: bool,
         buffer: (HistoryBuffer<f32, 500>, HistoryBuffer<f32, 500>),
+        timeout: Instant<u32, 1_u32, 8000000_u32>,
     }
 
     #[local]
@@ -138,13 +148,16 @@ mod app {
             gpiob.pb8.into_push_pull_output(),
         );
 
-        display_levels::spawn_after(DISPLAY_UPDATE.millis()).ok();
+        update::spawn_after(DISPLAY_UPDATE.millis()).ok();
+        timeout::spawn_after(DISPLAY_UPDATE.millis()).ok();
+        message::spawn(Init).ok();
 
         (
             Shared {
-                state: State::Show { mode: Levels },
+                state: Uninitialised,
                 animation_enabled: false,
                 buffer: (Buffer::new(), Buffer::new()),
+                timeout: monotonics::now(),
             },
             Local {
                 mute_toggle,
@@ -171,10 +184,10 @@ mod app {
         local = [mute_output, left_leds, right_leds],
         priority = 5
     )]
-    fn dispatch(mut cx: dispatch::Context, msg: Message) {
+    fn message(mut cx: message::Context, msg: Message) {
         let mut state = cx.shared.state.lock(|state| *state);
 
-        if let Some(new_state) = state.dispatch(&mut cx.local, msg) {
+        if let Some(new_state) = state.message(&mut cx.local, msg) {
             cx.shared.state.lock(|state| *state = new_state);
         }
     }
@@ -201,7 +214,7 @@ mod app {
             animation_frame::spawn_after(ANIMATION_INTERVAL.millis(), counter + 1).ok();
         }
 
-        dispatch::spawn(AnimationFrame(counter)).ok();
+        message::spawn(AnimationFrame(counter)).ok();
     }
 
     #[task(
@@ -221,11 +234,11 @@ mod app {
         ],
         priority = 9
     )]
-    fn toggle_mute(cx: toggle_mute::Context) {
+    fn mute_toggle(cx: mute_toggle::Context) {
         cx.local.mute_toggle.clear_interrupt_pending_bit();
 
         if !cx.local.debouncer.is_bouncing() {
-            dispatch::spawn(ToggleMute).ok();
+            message::spawn(ToggleMute).ok();
 
             cx.local.debouncer.reset();
         } else {
@@ -241,11 +254,11 @@ mod app {
         ],
         priority = 9
     )]
-    fn toggle_mode(cx: toggle_mode::Context) {
+    fn mode_toggle(cx: mode_toggle::Context) {
         cx.local.mode_toggle.clear_interrupt_pending_bit();
 
         if !cx.local.debouncer.is_bouncing() {
-            dispatch::spawn(ToggleMode).ok();
+            message::spawn(ToggleMode).ok();
 
             cx.local.debouncer.reset();
         } else {
@@ -262,7 +275,7 @@ mod app {
         ],
         priority = 2
     )]
-    fn monitor_inputs(mut cx: monitor_inputs::Context) {
+    fn buffer(mut cx: buffer::Context) {
         let left = cx.local.left_input.get_duty_cycle();
         let right = cx.local.right_input.get_duty_cycle();
 
@@ -272,12 +285,30 @@ mod app {
         });
     }
 
-    #[task(shared = [buffer])]
-    fn display_levels(mut cx: display_levels::Context) {
-        display_levels::spawn_after(DISPLAY_UPDATE.millis()).ok();
+    #[task(shared = [buffer, timeout])]
+    fn update(cx: update::Context) {
+        update::spawn_after(DISPLAY_UPDATE.millis()).ok();
 
-        cx.shared.buffer.lock(|(left_buf, right_buf)| {
-            dispatch::spawn(Update(left_buf.avg(), right_buf.avg())).ok();
+        (cx.shared.timeout, cx.shared.buffer).lock(|timeout, (left_buf, right_buf)| {
+            let left = left_buf.avg();
+            let right = right_buf.avg();
+
+            if left > 0.0 || right > 0.0 {
+                *timeout = monotonics::now();
+            }
+
+            message::spawn(Update(left, right)).ok();
+        });
+    }
+
+    #[task(shared = [timeout])]
+    fn timeout(mut cx: timeout::Context) {
+        timeout::spawn_after(DISPLAY_UPDATE.millis()).ok();
+
+        cx.shared.timeout.lock(|timeout| {
+            if *timeout < monotonics::now() - DISPLAY_TIMEOUT.secs() {
+                message::spawn(Timeout).ok();
+            }
         });
     }
 }
