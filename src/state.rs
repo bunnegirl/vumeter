@@ -95,7 +95,10 @@ impl State {
             (Show { mode }, ToggleMute) => {
                 mute(false, res);
 
-                Some(Muted { high: false, mode: *mode })
+                Some(Muted {
+                    high: false,
+                    mode: *mode,
+                })
             }
 
             // animate mute indicator
