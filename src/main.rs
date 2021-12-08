@@ -25,7 +25,7 @@ use stm32f4xx_hal::{
 };
 
 /// frequency of dsp board's pwm signal (in kilohertz)
-const PWM_FREQUENCY: u32 = 6;
+const PWM_FREQUENCY: u32 = 12;
 
 /// how fast should animation frames play (in milliseconds)
 const ANIMATION_INTERVAL: u32 = 100;
@@ -47,7 +47,7 @@ fn panic(info: &PanicInfo) -> ! {
     }
 }
 
-#[rtic::app(device = stm32f4xx_hal::pac, dispatchers = [EXTI2, EXTI3, EXTI4])]
+#[rtic::app(device = stm32f4xx_hal::pac, dispatchers = [SPI1, SPI2, SPI3])]
 mod app {
     use super::*;
 
@@ -64,9 +64,11 @@ mod app {
 
     #[local]
     struct Local {
-        mute_toggle: PA0<Input<PullUp>>,
-        mute_output: PB0<Output<PushPull>>,
-        mode_toggle: PA1<Input<PullUp>>,
+        toggle_mute: PA0<Input<PullUp>>,
+        mute_output: PA7<Output<PushPull>>,
+        toggle_meter: PA1<Input<PullUp>>,
+        toggle_mode: PA2<Input<PullUp>>,
+        mode_output: PB0<Output<PushPull>>,
         left_input: PwmInput<TIM2, PA5<Alternate<1>>>,
         right_input: PwmInput<TIM3, PA6<Alternate<2>>>,
         left_leds: Leds<
@@ -108,21 +110,31 @@ mod app {
         let gpioa = cx.device.GPIOA.split();
         let gpiob = cx.device.GPIOB.split();
 
-        let mut mute_toggle = gpioa.pa0.into_pull_up_input();
+        let mut toggle_mute = gpioa.pa0.into_pull_up_input();
 
-        mute_toggle.make_interrupt_source(&mut syscfg);
-        mute_toggle.enable_interrupt(&mut cx.device.EXTI);
-        mute_toggle.trigger_on_edge(&mut cx.device.EXTI, Edge::Falling);
+        toggle_mute.make_interrupt_source(&mut syscfg);
+        toggle_mute.enable_interrupt(&mut cx.device.EXTI);
+        toggle_mute.trigger_on_edge(&mut cx.device.EXTI, Edge::Falling);
 
-        let mut mute_output = gpiob.pb0.into_push_pull_output();
+        let mut mute_output = gpioa.pa7.into_push_pull_output();
 
         mute_output.set_high();
 
-        let mut mode_toggle = gpioa.pa1.into_pull_up_input();
+        let mut toggle_meter = gpioa.pa1.into_pull_up_input();
 
-        mode_toggle.make_interrupt_source(&mut syscfg);
-        mode_toggle.enable_interrupt(&mut cx.device.EXTI);
-        mode_toggle.trigger_on_edge(&mut cx.device.EXTI, Edge::Falling);
+        toggle_meter.make_interrupt_source(&mut syscfg);
+        toggle_meter.enable_interrupt(&mut cx.device.EXTI);
+        toggle_meter.trigger_on_edge(&mut cx.device.EXTI, Edge::Falling);
+
+        let mut toggle_mode = gpioa.pa2.into_pull_up_input();
+
+        toggle_mode.make_interrupt_source(&mut syscfg);
+        toggle_mode.enable_interrupt(&mut cx.device.EXTI);
+        toggle_mode.trigger_on_edge(&mut cx.device.EXTI, Edge::Falling);
+
+        let mut mode_output = gpiob.pb0.into_push_pull_output();
+
+        mode_output.set_high();
 
         let left_input = HalTimer::new(cx.device.TIM2, &clocks)
             .pwm_input(PWM_FREQUENCY.khz(), gpioa.pa5.into_alternate());
@@ -150,7 +162,7 @@ mod app {
 
         update::spawn_after(DISPLAY_UPDATE.millis()).ok();
         timeout::spawn_after(DISPLAY_UPDATE.millis()).ok();
-        message::spawn(Init).ok();
+        message::spawn(Initialise).ok();
 
         (
             Shared {
@@ -160,9 +172,11 @@ mod app {
                 timeout: monotonics::now(),
             },
             Local {
-                mute_toggle,
+                toggle_mute,
                 mute_output,
-                mode_toggle,
+                toggle_meter,
+                toggle_mode,
+                mode_output,
                 left_leds,
                 left_input,
                 right_input,
@@ -211,6 +225,8 @@ mod app {
         let enabled = cx.shared.animation_enabled.lock(|enabled| *enabled);
 
         if enabled {
+            let counter = if counter > 100 { 0 } else { counter };
+
             animation_frame::spawn_after(ANIMATION_INTERVAL.millis(), counter + 1).ok();
         }
 
@@ -229,13 +245,13 @@ mod app {
     #[task(
         binds = EXTI0,
         local = [
-            mute_toggle,
+            toggle_mute,
             debouncer: Debounce<150> = Debounce(None)
         ],
         priority = 9
     )]
-    fn mute_toggle(cx: mute_toggle::Context) {
-        cx.local.mute_toggle.clear_interrupt_pending_bit();
+    fn toggle_mute(cx: toggle_mute::Context) {
+        cx.local.toggle_mute.clear_interrupt_pending_bit();
 
         if !cx.local.debouncer.is_bouncing() {
             message::spawn(ToggleMute).ok();
@@ -249,13 +265,33 @@ mod app {
     #[task(
         binds = EXTI1,
         local = [
-            mode_toggle,
+            toggle_meter,
             debouncer: Debounce<150> = Debounce(None)
         ],
         priority = 9
     )]
-    fn mode_toggle(cx: mode_toggle::Context) {
-        cx.local.mode_toggle.clear_interrupt_pending_bit();
+    fn toggle_meter(cx: toggle_meter::Context) {
+        cx.local.toggle_meter.clear_interrupt_pending_bit();
+
+        if !cx.local.debouncer.is_bouncing() {
+            message::spawn(ToggleMeter).ok();
+
+            cx.local.debouncer.reset();
+        } else {
+            cx.local.debouncer.update();
+        }
+    }
+
+    #[task(
+        binds = EXTI2,
+        local = [
+            toggle_mode,
+            debouncer: Debounce<150> = Debounce(None)
+        ],
+        priority = 9
+    )]
+    fn toggle_mode(cx: toggle_mode::Context) {
+        cx.local.toggle_mode.clear_interrupt_pending_bit();
 
         if !cx.local.debouncer.is_bouncing() {
             message::spawn(ToggleMode).ok();

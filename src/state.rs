@@ -26,7 +26,6 @@ fn meter(mode: MeterMode, left: f32, right: f32, res: &mut Resources) {
         left = left.peak();
         right = right.peak();
     }
-    
     res.left_leds.set(left);
     res.right_leds.set(right);
 }
@@ -56,10 +55,11 @@ fn unmute(res: &mut Resources) {
 
 #[derive(Debug)]
 pub enum Message {
-    Init,
+    Initialise,
     Timeout,
     AnimationFrame(u32),
     ToggleMute,
+    ToggleMeter,
     ToggleMode,
     Update(f32, f32),
 }
@@ -73,32 +73,39 @@ pub enum MeterMode {
 #[derive(Debug, Clone, Copy)]
 pub enum State {
     Uninitialised,
-    Idle { level: u8, up: bool },
-    Meter { mode: MeterMode },
-    Muted { mode: MeterMode, high: bool },
+    Idle {
+        mode: MeterMode,
+        level: u8,
+        up: bool,
+    },
+    Meter {
+        mode: MeterMode,
+    },
+    Muted {
+        mode: MeterMode,
+        high: bool,
+    },
 }
 
 impl State {
-    pub fn message(
-        &mut self,
-        res: &mut Resources,
-        msg: Message,
-    ) -> Option<Self> {
+    pub fn message(&mut self, res: &mut Resources, msg: Message) -> Option<Self> {
         match (self, msg) {
             // set initial state
-            (Uninitialised, Init) => {
-                Some(Meter { mode: Levels })
-            }
+            (Uninitialised, Initialise) => Some(Meter { mode: Levels }),
 
             // start idle animation
-            (Meter { .. }, Timeout) => {
+            (Meter { mode }, Timeout) => {
                 idle_start();
 
-                Some(Idle { level: 5, up: false })
+                Some(Idle {
+                    mode: *mode,
+                    level: 5,
+                    up: false,
+                })
             }
 
             // idle animation
-            (Idle { level, up }, AnimationFrame(_)) => {
+            (Idle { mode, level, up }, AnimationFrame(_)) => {
                 let (level, up) = if !*up {
                     // go back up
                     if *level == 0 {
@@ -116,8 +123,12 @@ impl State {
                 };
 
                 idle_animation(level, res);
-                
-                Some(Idle { level, up })
+
+                Some(Idle {
+                    mode: *mode,
+                    level,
+                    up,
+                })
             }
 
             // stop idle animation
@@ -125,7 +136,6 @@ impl State {
                 if left > 0.0 || right > 0.0 {
                     idle_stop();
                     meter(Levels, left, right, res);
-    
                     Some(Meter { mode: Levels })
                 } else {
                     None
@@ -140,10 +150,10 @@ impl State {
             }
 
             // switch to peaks mode
-            (Meter { mode: Levels }, ToggleMode) => Some(Meter { mode: Peaks }),
+            (Meter { mode: Levels }, ToggleMeter) => Some(Meter { mode: Peaks }),
 
             // switch to levels mode
-            (Meter { mode: Peaks }, ToggleMode) => Some(Meter { mode: Levels }),
+            (Meter { mode: Peaks }, ToggleMeter) => Some(Meter { mode: Levels }),
 
             // unmute audio
             (Muted { mode, .. }, ToggleMute) => {
@@ -154,6 +164,16 @@ impl State {
 
             // mute audio
             (Meter { mode }, ToggleMute) => {
+                mute(false, res);
+
+                Some(Muted {
+                    high: false,
+                    mode: *mode,
+                })
+            }
+
+            // mute audio
+            (Idle { mode, .. }, ToggleMute) => {
                 mute(false, res);
 
                 Some(Muted {

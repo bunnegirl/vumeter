@@ -15,11 +15,11 @@ impl From<f32> for LedPattern {
     fn from(duty: f32) -> Self {
         Self::from(match duty {
             x if x > 99.0 => None,
-            x if x > 66.0 => Some(5),
-            x if x > 55.0 => Some(4),
-            x if x > 44.0 => Some(3),
-            x if x > 33.0 => Some(2),
-            x if x > 22.0 => Some(1),
+            x if x > 77.0 => Some(5),
+            x if x > 66.0 => Some(4),
+            x if x > 55.0 => Some(3),
+            x if x > 44.0 => Some(2),
+            x if x > 33.0 => Some(1),
             x if x > 11.0 => Some(0),
             _ => None,
         })
