@@ -163,7 +163,7 @@ impl Into<f32> for Level {
             Minus30 => 0.37500,
             Minus48 => 0.19167,
             Minus78 => 0.01667,
-            Minus96 => 0.0,
+            Minus96 => 0.00833,
         }
     }
 }
