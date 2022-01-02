@@ -1,199 +1,167 @@
-use crate::leds::*;
-pub use Message::*;
-pub use MeterMode::*;
-pub use State::*;
+use crate::bus::*;
+use crate::meter::*;
+use crate::mcu::monotonics;
+use fugit::{ExtU32, Instant};
 
-type Resources<'a> = crate::app::message::LocalResources<'a>;
+pub use Device::*;
+pub use Power::*;
+pub use Signal::*;
+pub use Timeout::*;
 
-fn idle_start() {
-    crate::app::start_animation::spawn().ok();
-}
-
-fn idle_animation(level: u8, res: &mut Resources) {
-    res.left_leds.set(LedPattern::from(level).peak());
-    res.right_leds.set(LedPattern::from(level).peak());
-}
-
-fn idle_stop() {
-    crate::app::stop_animation::spawn().ok();
-}
-
-fn meter(mode: MeterMode, left: f32, right: f32, res: &mut Resources) {
-    let mut left = LedPattern::from(left);
-    let mut right = LedPattern::from(right);
-
-    if let Peaks = mode {
-        left = left.peak();
-        right = right.peak();
-    }
-    res.left_leds.set(left);
-    res.right_leds.set(right);
-}
-
-fn mute(high: bool, res: &mut Resources) {
-    crate::app::start_animation::spawn().ok();
-
-    res.mute_output.set_low();
-
-    if high {
-        res.left_leds.set(LedPattern::from(5).peak());
-        res.right_leds.set(LedPattern::from(5).peak());
-    } else {
-        res.left_leds.clear();
-        res.right_leds.clear();
-    }
-}
-
-fn unmute(res: &mut Resources) {
-    crate::app::stop_animation::spawn().ok();
-
-    res.mute_output.set_high();
-
-    res.left_leds.clear();
-    res.right_leds.clear();
-}
-
-#[derive(Debug)]
-pub enum Message {
-    Initialise,
-    Timeout,
-    AnimationFrame(u32),
-    ToggleMute,
-    ToggleMeter,
-    ToggleMode,
-    Update(f32, f32),
+#[derive(Debug, Clone, Copy)]
+pub enum Device {
+    Headphones,
+    Speakers,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum MeterMode {
-    Levels,
-    Peaks,
+pub enum Power {
+    Booting,
+    PowerOff,
+    PowerOn,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum State {
-    Uninitialised,
-    Idle {
-        mode: MeterMode,
-        level: u8,
-        up: bool,
-    },
-    Meter {
-        mode: MeterMode,
-    },
-    Muted {
-        mode: MeterMode,
-        high: bool,
-    },
+pub enum Signal {
+    Muted,
+    Unmuted,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub enum Timeout {
+    Running(Instant<u32, 1, 1000000_u32>),
+    Idling(Pattern),
+}
+
+fn timeout() -> Instant<u32, 1, 1000000_u32> {
+    monotonics::now() + 30.secs()
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct State(Power, Signal, Device, Timeout);
 
 impl State {
-    pub fn message(&mut self, res: &mut Resources, msg: Message) -> Option<Self> {
-        match (self, msg) {
-            // set initial state
-            (Uninitialised, Initialise) => Some(Meter { mode: Levels }),
+    pub fn new() -> Self {
+        State(Booting, Unmuted, Headphones, Running(timeout()))
+    }
 
-            // start idle animation
-            (Meter { mode }, Timeout) => {
-                idle_start();
+    pub fn with_device(self, device: Device) -> Self {
+        State(self.0, self.1, device, self.3)
+    }
 
-                Some(Idle {
-                    mode: *mode,
-                    level: 5,
-                    up: false,
-                })
-            }
+    pub fn with_power(self, power: Power) -> Self {
+        State(power, self.1, self.2, self.3)
+    }
 
-            // idle animation
-            (Idle { mode, level, up }, AnimationFrame(_)) => {
-                let (level, up) = if !*up {
-                    // go back up
-                    if *level == 0 {
-                        (1, true)
-                    } else {
-                        (*level - 1, false)
-                    }
-                } else {
-                    // go back down
-                    if *level == 5 {
-                        (4, false)
-                    } else {
-                        (*level + 1, true)
-                    }
-                };
+    pub fn with_signal(self, signal: Signal) -> Self {
+        State(self.0, signal, self.2, self.3)
+    }
 
-                idle_animation(level, res);
+    pub fn with_timeout(self, timeout: Timeout) -> Self {
+        State(self.0, self.1, self.2, timeout)
+    }
+}
 
-                Some(Idle {
-                    mode: *mode,
-                    level,
-                    up,
-                })
-            }
+pub fn modify_state(state: State, msg: StateMsg) -> State {
+    match (state, msg) {
+        // set initial state
+        (State(Booting, ..), Initialise) => {
+            ToMcu(SetPower(PowerOn)).send();
+            ToMcu(SetDevice(Headphones)).send();
+            ToMcu(SetMute(Unmuted)).send();
 
-            // stop idle animation
-            (Idle { .. }, Update(left, right)) => {
-                if left > 0.0 || right > 0.0 {
-                    idle_stop();
-                    meter(Levels, left, right, res);
-                    Some(Meter { mode: Levels })
-                } else {
-                    None
-                }
-            }
-
-            // update meter
-            (Meter { mode }, Update(left, right)) => {
-                meter(*mode, left, right, res);
-
-                None
-            }
-
-            // switch to peaks mode
-            (Meter { mode: Levels }, ToggleMeter) => Some(Meter { mode: Peaks }),
-
-            // switch to levels mode
-            (Meter { mode: Peaks }, ToggleMeter) => Some(Meter { mode: Levels }),
-
-            // unmute audio
-            (Muted { mode, .. }, ToggleMute) => {
-                unmute(res);
-
-                Some(Meter { mode: *mode })
-            }
-
-            // mute audio
-            (Meter { mode }, ToggleMute) => {
-                mute(false, res);
-
-                Some(Muted {
-                    high: false,
-                    mode: *mode,
-                })
-            }
-
-            // mute audio
-            (Idle { mode, .. }, ToggleMute) => {
-                mute(false, res);
-
-                Some(Muted {
-                    high: false,
-                    mode: *mode,
-                })
-            }
-
-            // animate mute indicator
-            (Muted { mut high, mode }, AnimationFrame(counter)) => {
-                if counter % 20 == 0 {
-                    high = !high;
-                }
-
-                mute(high, res);
-
-                Some(Muted { high, mode: *mode })
-            }
-
-            _ => None,
+            State(PowerOn, Unmuted, Headphones, Running(timeout()))
         }
+
+        // power on dsp
+        (State(PowerOff, ..), TogglePower) => {
+            ToMcu(SetPower(PowerOn)).send();
+
+            state.with_power(PowerOn)
+        }
+
+        // power off dsp
+        (State(PowerOn, ..), TogglePower) => {
+            ToMcu(SetPower(PowerOff)).send();
+
+            state.with_power(PowerOff)
+        }
+
+        // switch to headphones
+        (State(PowerOn, _, Speakers, _), ToggleDevice) => {
+            ToMcu(SetDevice(Headphones)).send();
+
+            state.with_device(Headphones)
+        }
+
+        // switch to speakers
+        (State(PowerOn, _, Headphones, _), ToggleDevice) => {
+            ToMcu(SetDevice(Speakers)).send();
+
+            state.with_device(Speakers)
+        }
+
+        // mute output
+        (State(PowerOn, Unmuted, ..), ToggleMute) => {
+            ToMcu(SetMute(Muted)).send();
+
+            state.with_signal(Muted)
+        }
+
+        // unmute output
+        (State(PowerOn, Muted, ..), ToggleMute) => {
+            ToMcu(SetMute(Unmuted)).send();
+
+            state.with_signal(Unmuted)
+        }
+
+        // update meter display
+        (State(PowerOn, Unmuted, _, Running(time)), UpdateMeter(levels)) => {
+            let patterns = levels.to_patterns();
+
+            ToMcu(SetMeter(patterns)).send();
+
+            state.with_timeout(Running(if levels.is_active() { timeout() } else { time }))
+        }
+
+        // timeout
+        (State(PowerOn, Unmuted, _, Running(time)), Clock(_)) => {
+            if time < monotonics::now() {
+                let mut pattern = Pattern::new();
+
+                pattern.set_at(0, true);
+                pattern.rotate_left(1);
+
+                state.with_timeout(Idling(pattern))
+            } else {
+                state.with_timeout(Running(time))
+            }
+        }
+
+        // idling
+        (State(PowerOn, Unmuted, _, Idling(mut pattern)), Clock(count)) => {
+            if count % 50 == 0 {
+                pattern.rotate_left(1);
+
+                ToMcu(SetMeter(Patterns(pattern, pattern))).send();
+            }
+
+            state.with_timeout(Idling(pattern))
+        }
+
+        // resume 
+        (State(PowerOn, Unmuted, _, Idling(_)), UpdateMeter(levels)) => {
+            if levels.is_active() {
+                let patterns = levels.to_patterns();
+
+                ToMcu(SetMeter(patterns)).send();
+
+                state.with_timeout(Running(timeout()))
+            } else {
+                state
+            }
+        }
+
+        (state, _) => state,
     }
 }

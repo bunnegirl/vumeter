@@ -1,38 +1,28 @@
-use crate::app::monotonics;
+use crate::mcu::monotonics;
 use fugit::{ExtU32, Instant};
+use heapless::{LinearMap};
 
-#[derive(Debug)]
-pub struct Debounce<const DELAY_MS: u32>(pub Option<Instant<u32, 1_u32, 8000000_u32>>);
+pub type Debouncers<const SIZE: usize> = LinearMap<usize, Instant<u32, 1, 1000000>, SIZE>;
 
-pub trait Debouncer<const DELAY_MS: u32> {
-    fn new() -> Debounce<DELAY_MS>;
-    fn update(&mut self);
-    fn reset(&mut self);
-    fn is_bouncing(&self) -> bool;
+pub trait DebouncersExt {
+    fn is_ok(&self, id: usize) -> bool;
+    fn update(&mut self, id: usize, delay: u32);
 }
 
-impl<const DELAY_MS: u32> Debouncer<DELAY_MS> for Debounce<DELAY_MS> {
-    fn new() -> Debounce<DELAY_MS> {
-        Debounce(Some(monotonics::now() + DELAY_MS.millis()))
-    }
+impl<const SIZE: usize> DebouncersExt for Debouncers<SIZE> {
+    fn is_ok(&self, id: usize) -> bool {
+        if let Some(instant) = self.get(&id) {
+            return *instant < monotonics::now();
+        }
 
-    fn update(&mut self) {
-        if let Debounce(Some(debounce)) = self {
-            self.0 = Some(*debounce + DELAY_MS.millis());
+        true
+    }
+    
+    fn update(&mut self, id: usize, delay: u32) {
+        if let Some(instant) = self.get_mut(&id) {
+            *instant = monotonics::now() + delay.millis();
         } else {
-            self.reset();
+            self.insert(id, monotonics::now() + delay.millis()).ok();
         }
-    }
-
-    fn reset(&mut self) {
-        self.0 = Some(monotonics::now() + DELAY_MS.millis());
-    }
-
-    fn is_bouncing(&self) -> bool {
-        if let Debounce(Some(debounce)) = self {
-            return monotonics::now() < *debounce;
-        }
-
-        false
     }
 }
