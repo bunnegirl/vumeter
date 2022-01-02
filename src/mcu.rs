@@ -137,7 +137,7 @@ mod app {
             ),
         ];
 
-        ToState(Initialise).send();
+        Initialise.send();
         clock::spawn_after(10.millis(), 0).ok();
 
         (
@@ -226,7 +226,7 @@ mod app {
     fn clock(_cx: clock::Context, count: u32) {
         clock::spawn_after(10.millis(), if count == u32::MAX { 0 } else { count + 1 }).ok();
 
-        ToState(Clock(count)).send();
+        Clock(count).send();
     }
 
     #[task(
@@ -266,7 +266,7 @@ mod app {
 
         if let Some((id, msg, delay)) = msg {
             if debouncers.is_ok(id) {
-                ToState(msg).send();
+                msg.send();
             }
 
             debouncers.update(id, delay);
@@ -299,7 +299,7 @@ mod app {
             let left = Level::from(capture_left.as_slice().iter().sum::<f32>() / 400.0);
             let right = Level::from(capture_right.as_slice().iter().sum::<f32>() / 400.0);
 
-            ToState(UpdateMeter(Levels(left, right))).send();
+            UpdateMeter(Levels(left, right)).send();
 
             *capture_left = HistoryBuffer::new();
             *capture_right = HistoryBuffer::new();

@@ -66,51 +66,51 @@ pub fn modify_state(state: State, msg: StateMsg) -> State {
     match (state, msg) {
         // set initial state
         (State(Booting, ..), Initialise) => {
-            ToMcu(SetPower(PowerOn)).send();
-            ToMcu(SetDevice(Headphones)).send();
-            ToMcu(SetMute(Unmuted)).send();
+            SetPower(PowerOn).send();
+            SetDevice(Headphones).send();
+            SetMute(Unmuted).send();
 
             State(PowerOn, Unmuted, Headphones, Running(timeout()))
         }
 
         // power on dsp
         (State(PowerOff, ..), TogglePower) => {
-            ToMcu(SetPower(PowerOn)).send();
+            SetPower(PowerOn).send();
 
             state.with_power(PowerOn)
         }
 
         // power off dsp
         (State(PowerOn, ..), TogglePower) => {
-            ToMcu(SetPower(PowerOff)).send();
+            SetPower(PowerOff).send();
 
             state.with_power(PowerOff)
         }
 
         // switch to headphones
         (State(PowerOn, _, Speakers, _), ToggleDevice) => {
-            ToMcu(SetDevice(Headphones)).send();
+            SetDevice(Headphones).send();
 
             state.with_device(Headphones)
         }
 
         // switch to speakers
         (State(PowerOn, _, Headphones, _), ToggleDevice) => {
-            ToMcu(SetDevice(Speakers)).send();
+            SetDevice(Speakers).send();
 
             state.with_device(Speakers)
         }
 
         // mute output
         (State(PowerOn, Unmuted, ..), ToggleMute) => {
-            ToMcu(SetMute(Muted)).send();
+            SetMute(Muted).send();
 
             state.with_signal(Muted)
         }
 
         // unmute output
         (State(PowerOn, Muted, ..), ToggleMute) => {
-            ToMcu(SetMute(Unmuted)).send();
+            SetMute(Unmuted).send();
 
             state.with_signal(Unmuted)
         }
@@ -119,7 +119,7 @@ pub fn modify_state(state: State, msg: StateMsg) -> State {
         (State(PowerOn, Unmuted, _, Running(time)), UpdateMeter(levels)) => {
             let patterns = levels.to_patterns();
 
-            ToMcu(SetMeter(patterns)).send();
+            SetMeter(patterns).send();
 
             state.with_timeout(Running(if levels.is_active() { timeout() } else { time }))
         }
@@ -143,7 +143,7 @@ pub fn modify_state(state: State, msg: StateMsg) -> State {
             if count % 50 == 0 {
                 pattern.rotate_left(1);
 
-                ToMcu(SetMeter(Patterns(pattern, pattern))).send();
+                SetMeter(Patterns(pattern, pattern)).send();
             }
 
             state.with_timeout(Idling(pattern))
@@ -154,7 +154,7 @@ pub fn modify_state(state: State, msg: StateMsg) -> State {
             if levels.is_active() {
                 let patterns = levels.to_patterns();
 
-                ToMcu(SetMeter(patterns)).send();
+                SetMeter(patterns).send();
 
                 state.with_timeout(Running(timeout()))
             } else {

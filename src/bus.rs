@@ -13,17 +13,17 @@ pub enum Busses {
     ToState(StateMsg),
 }
 
-impl Busses {
-    pub fn send(self) {
-        Q.enqueue(self).ok();
-    }
-}
-
 pub enum McuMsg {
     SetDevice(Device),
     SetMute(Signal),
     SetPower(Power),
     SetMeter(Patterns),
+}
+
+impl McuMsg {
+    pub fn send(self) {
+        Q.enqueue(ToMcu(self)).ok();
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -34,4 +34,10 @@ pub enum StateMsg {
     ToggleMute,
     TogglePower,
     UpdateMeter(Levels),
+}
+
+impl StateMsg {
+    pub fn send(self) {
+        Q.enqueue(ToState(self)).ok();
+    }
 }
