@@ -103,7 +103,10 @@ pub fn modify_state(state: State, msg: StateMsg) -> State {
 
         // mute output
         (State(PowerOn, Unmuted, ..), ToggleMute) => {
+            let pattern = Pattern::new();
+
             SetMute(Muted).send();
+            SetMeter(Patterns(pattern, pattern)).send();
 
             state.with_signal(Muted)
         }
@@ -141,15 +144,15 @@ pub fn modify_state(state: State, msg: StateMsg) -> State {
         // idling
         (State(PowerOn, Unmuted, _, Idling(mut pattern)), Clock(count)) => {
             if count % 50 == 0 {
-                pattern.rotate_left(1);
-
                 SetMeter(Patterns(pattern, pattern)).send();
+                
+                pattern.rotate_left(1);
             }
 
             state.with_timeout(Idling(pattern))
         }
 
-        // resume 
+        // resume
         (State(PowerOn, Unmuted, _, Idling(_)), UpdateMeter(levels)) => {
             if levels.is_active() {
                 let patterns = levels.to_patterns();

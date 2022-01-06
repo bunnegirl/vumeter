@@ -8,8 +8,6 @@ use stm32h7xx_hal::{
 use core::cmp::Ordering;
 pub use Level::*;
 
-pub const INACTIVE: Level = Level::Minus96;
-
 pub enum LeftPin<MODE> {
     Clip(PA12<MODE>),
     Plus6(PA10<MODE>),
@@ -17,10 +15,10 @@ pub enum LeftPin<MODE> {
     Minus6(PA5<MODE>),
     Minus12(PA3<MODE>),
     Minus18(PA1<MODE>),
-    Minus30(PA4<MODE>),
-    Minus48(PA2<MODE>),
-    Minus78(PA0<MODE>),
-    Minus96,
+    Minus24(PA4<MODE>),
+    Minus30(PA2<MODE>),
+    Minus36(PA0<MODE>),
+    Detect,
 }
 
 impl LeftPin<Output<PushPull>> {
@@ -34,10 +32,10 @@ impl LeftPin<Output<PushPull>> {
             Minus6(pin) => Some(pin),
             Minus12(pin) => Some(pin),
             Minus18(pin) => Some(pin),
+            Minus24(pin) => Some(pin),
             Minus30(pin) => Some(pin),
-            Minus48(pin) => Some(pin),
-            Minus78(pin) => Some(pin),
-            Minus96 => None,
+            Minus36(pin) => Some(pin),
+            _ => None,
         }
     }
 }
@@ -49,10 +47,10 @@ pub enum RightPin<MODE> {
     Minus6(PE11<MODE>),
     Minus12(PE13<MODE>),
     Minus18(PE15<MODE>),
-    Minus30(PE10<MODE>),
-    Minus48(PE12<MODE>),
-    Minus78(PE14<MODE>),
-    Minus96,
+    Minus24(PE10<MODE>),
+    Minus30(PE12<MODE>),
+    Minus36(PE14<MODE>),
+    Detect,
 }
 
 impl RightPin<Output<PushPull>> {
@@ -66,10 +64,10 @@ impl RightPin<Output<PushPull>> {
             Minus6(pin) => Some(pin),
             Minus12(pin) => Some(pin),
             Minus18(pin) => Some(pin),
+            Minus24(pin) => Some(pin),
             Minus30(pin) => Some(pin),
-            Minus48(pin) => Some(pin),
-            Minus78(pin) => Some(pin),
-            Minus96 => None,
+            Minus36(pin) => Some(pin),
+            _ => None,
         }
     }
 }
@@ -101,19 +99,19 @@ pub enum Level {
     Minus6,
     Minus12,
     Minus18,
+    Minus24,
     Minus30,
-    Minus48,
-    Minus78,
-    Minus96,
+    Minus36,
+    Detect,
 }
 
 impl LevelActivityExt for Level {
     fn is_active(&self) -> bool {
-        !self.is_inactive()
+        self > &Level::Detect
     }
 
     fn is_inactive(&self) -> bool {
-        self == &INACTIVE
+        self <= &Level::Detect
     }
 }
 
@@ -140,13 +138,13 @@ impl Into<&str> for Level {
             Clip => "clipping",
             Plus6 => "+6db",
             Nominal => "~0db",
-            Minus6 => "-6db",
-            Minus12 => "-12db",
-            Minus18 => "-18db",
-            Minus30 => "-24db",
-            Minus48 => "-30db",
-            Minus78 => "-36db",
-            Minus96 => "-96db",
+            Minus6 => "-3db",
+            Minus12 => "-6db",
+            Minus18 => "-9db",
+            Minus24 => "-12db",
+            Minus30 => "-15db",
+            Minus36 => "-18db",
+            Detect => "detected",
         }
     }
 }
@@ -154,16 +152,16 @@ impl Into<&str> for Level {
 impl Into<f32> for Level {
     fn into(self) -> f32 {
         match self {
-            Clip => 0.80833,
-            Plus6 => 0.74167,
-            Nominal => 0.68333,
-            Minus6 => 0.61667,
-            Minus12 => 0.55833,
-            Minus18 => 0.50000,
-            Minus30 => 0.37500,
-            Minus48 => 0.19167,
-            Minus78 => 0.01667,
-            Minus96 => 0.00833,
+            Clip => 0.9750,
+            Plus6 => 0.8650,
+            Nominal => 0.8150,
+            Minus6 => 0.7750,
+            Minus12 => 0.7350,
+            Minus18 => 0.6950,
+            Minus24 => 0.6450,
+            Minus30 => 0.6050,
+            Minus36 => 0.5650,
+            Detect => 0.3950,
         }
     }
 }
@@ -183,10 +181,10 @@ impl From<f32> for Level {
             lvl if lvl > Minus6.into() => Minus6,
             lvl if lvl > Minus12.into() => Minus12,
             lvl if lvl > Minus18.into() => Minus18,
+            lvl if lvl > Minus24.into() => Minus24,
             lvl if lvl > Minus30.into() => Minus30,
-            lvl if lvl > Minus48.into() => Minus48,
-            lvl if lvl > Minus78.into() => Minus78,
-            _ => Minus96,
+            lvl if lvl > Minus36.into() => Minus36,
+            _ => Detect,
         }
     }
 }
@@ -354,19 +352,21 @@ impl MeterExt for Meter<Output<PushPull>> {
             let LevelPins(pin_level, left_pin, right_pin) = pins;
             let index = (*pin_level) as usize;
 
-            if let Some(left_pin) = left_pin.pin() {
-                if left[index] {
-                    left_pin.set_high().ok();
-                } else {
-                    left_pin.set_low().ok();
+            if index < left.len() {
+                if let Some(left_pin) = left_pin.pin() {
+                    if left[index] {
+                        left_pin.set_high().ok();
+                    } else {
+                        left_pin.set_low().ok();
+                    }
                 }
-            }
 
-            if let Some(right_pin) = right_pin.pin() {
-                if right[index] {
-                    right_pin.set_high().ok();
-                } else {
-                    right_pin.set_low().ok();
+                if let Some(right_pin) = right_pin.pin() {
+                    if right[index] {
+                        right_pin.set_high().ok();
+                    } else {
+                        right_pin.set_low().ok();
+                    }
                 }
             }
         }

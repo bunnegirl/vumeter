@@ -123,22 +123,23 @@ mod app {
                 LeftPin::Minus18(gpioa.pa1.into_push_pull_output()),
                 RightPin::Minus18(gpioe.pe15.into_push_pull_output()),
             ),
+            Minus24.pins(
+                LeftPin::Minus24(gpioa.pa4.into_push_pull_output()),
+                RightPin::Minus24(gpioe.pe10.into_push_pull_output()),
+            ),
             Minus30.pins(
-                LeftPin::Minus30(gpioa.pa4.into_push_pull_output()),
-                RightPin::Minus30(gpioe.pe10.into_push_pull_output()),
+                LeftPin::Minus30(gpioa.pa2.into_push_pull_output()),
+                RightPin::Minus30(gpioe.pe12.into_push_pull_output()),
             ),
-            Minus48.pins(
-                LeftPin::Minus48(gpioa.pa2.into_push_pull_output()),
-                RightPin::Minus48(gpioe.pe12.into_push_pull_output()),
-            ),
-            Minus78.pins(
-                LeftPin::Minus78(gpioa.pa0.into_push_pull_output()),
-                RightPin::Minus78(gpioe.pe14.into_push_pull_output()),
+            Minus36.pins(
+                LeftPin::Minus36(gpioa.pa0.into_push_pull_output()),
+                RightPin::Minus36(gpioe.pe14.into_push_pull_output()),
             ),
         ];
 
-        Initialise.send();
         clock::spawn_after(10.millis(), 0).ok();
+        
+        Initialise.send();
 
         (
             Shared {
@@ -162,9 +163,11 @@ mod app {
     }
 
     #[idle(
-        shared = [state],
+        shared = [state]
     )]
-    fn idle(mut cx: idle::Context) -> ! {
+    fn idle(cx: idle::Context) -> ! {
+        let idle::SharedResources { mut state } = cx.shared;
+
         loop {
             if let Some(bus) = Q.dequeue() {
                 match bus {
@@ -172,13 +175,11 @@ mod app {
                         recv::spawn(msg).ok();
                     }
                     ToState(msg) => {
-                        let new_state = modify_state(cx.shared.state.lock(|state| *state), msg);
-
-                        cx.shared.state.lock(|state| *state = new_state);
+                        state.lock(|state| {
+                            *state = modify_state(*state, msg);
+                        });
                     }
                 }
-            } else {
-                cortex_m::asm::nop();
             }
         }
     }
@@ -190,8 +191,7 @@ mod app {
             power_led,
             mute_out,
             meter,
-        ],
-        priority = 5,
+        ]
     )]
     fn recv(cx: recv::Context, msg: McuMsg) {
         match msg {
@@ -207,6 +207,9 @@ mod app {
             SetMute(Unmuted) => {
                 cx.local.mute_out.set_low().ok();
             }
+            SetPower(Booting) => {
+                panic!("undefined behaviour");
+            }
             SetPower(PowerOn) => {
                 cx.local.power_led.set_high().ok();
                 cx.local.power_out.set_high().ok();
@@ -218,7 +221,6 @@ mod app {
             SetMeter(Patterns(left, right)) => {
                 cx.local.meter.set(left, right);
             }
-            _ => {}
         }
     }
 
@@ -237,7 +239,7 @@ mod app {
             mute_in,
             debouncers: Debouncers<3> = Debouncers::new(),
         ],
-        priority = 9
+        priority = 3
     )]
     fn ctrl(cx: ctrl::Context) {
         let ctrl::LocalResources {
