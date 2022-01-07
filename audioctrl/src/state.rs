@@ -37,14 +37,17 @@ fn timeout() -> Instant<u32, 1, 1000000_u32> {
     timer::now() + 30.secs()
 }
 
+#[must_use]
 #[derive(Debug, Clone, Copy)]
 pub struct State(Power, Signal, Device, Timeout);
 
-impl State {
-    pub fn new() -> Self {
+impl Default for State {
+    fn default() -> Self {
         State(Booting, Unmuted, Headphones, Running(timeout()))
     }
+}
 
+impl State {
     pub fn with_device(self, device: Device) -> Self {
         State(self.0, self.1, device, self.3)
     }
@@ -103,7 +106,7 @@ pub fn modify_state(state: State, msg: StateMsg) -> State {
 
         // mute output
         (State(PowerOn, Unmuted, ..), ToggleMute) => {
-            let pattern = Pattern::new();
+            let pattern = Pattern::default();
 
             SetMute(Muted).send();
             SetMeter(Patterns(pattern, pattern)).send();
@@ -130,7 +133,7 @@ pub fn modify_state(state: State, msg: StateMsg) -> State {
         // timeout
         (State(PowerOn, Unmuted, _, Running(time)), Clock(_)) => {
             if time < timer::now() {
-                let mut pattern = Pattern::new();
+                let mut pattern = Pattern::default();
 
                 pattern.set_at(0, true);
                 pattern.rotate_left(1);

@@ -1,6 +1,6 @@
 use crate::timer;
 use fugit::{ExtU32, Instant};
-use heapless::{LinearMap};
+use heapless::LinearMap;
 
 pub type Debouncers<const SIZE: usize> = LinearMap<usize, Instant<u32, 1, 1000000>, SIZE>;
 

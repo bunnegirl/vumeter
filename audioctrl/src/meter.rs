@@ -124,7 +124,7 @@ impl<MODE> LevelPinsExt<MODE> for Level {
 impl LevelToPatternExt for Level {
     fn to_pattern(&self) -> Pattern {
         let index = (*self) as usize;
-        let mut pattern = Pattern::new();
+        let mut pattern = Pattern::default();
 
         pattern.set_up_to(index, true);
 
@@ -270,8 +270,8 @@ pub struct Pattern {
     pattern: [bool; METER_SIZE],
 }
 
-impl Pattern {
-    pub fn new() -> Self {
+impl Default for Pattern {
+    fn default() -> Self {
         Self {
             pattern: [false; METER_SIZE]
         }

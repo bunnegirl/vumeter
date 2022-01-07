@@ -3,13 +3,15 @@
 #![feature(concat_idents)]
 #![feature(trait_alias)]
 
+mod timer;
+
+use crate::timer::MonoTimer;
 use audioctrl as _;
 use audioctrl::bus::*;
 use audioctrl::debounce::*;
 use audioctrl::meter::*;
-use audioctrl::timer::MonoTimer;
 use audioctrl::state::*;
-use fugit::{ExtU32, TimerInstantU32};
+use fugit::ExtU32;
 use heapless::HistoryBuffer;
 use rtic::Mutex;
 use rtt_target::*;
@@ -20,11 +22,6 @@ use stm32h7xx_hal::{
     prelude::*,
     rcc::rec::AdcClkSel,
 };
-
-#[no_mangle]
-pub extern "Rust" fn external_now() -> TimerInstantU32<1_000_000> {
-    app::monotonics::now()
-}
 
 fn clock_send(_: app::clock_send::Context, count: u32) {
     app::clock_send::spawn_after(10.millis(), if count == u32::MAX { 0 } else { count + 1 }).ok();
@@ -270,7 +267,7 @@ mod app {
 
         (
             Shared {
-                state: State::new(),
+                state: State::default(),
             },
             Local {
                 device_in,
