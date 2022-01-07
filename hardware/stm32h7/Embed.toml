@@ -4,3 +4,9 @@ chip = "STM32H743VITx"
 [default.rtt]
 enabled = true
 show_timestamps = true
+
+[reconnect.flashing]
+enabled = false
+
+[reconnect.reset]
+enabled = false

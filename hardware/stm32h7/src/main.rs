@@ -3,6 +3,7 @@
 #![feature(concat_idents)]
 #![feature(trait_alias)]
 
+use audioctrl as _;
 use audioctrl::bus::*;
 use audioctrl::debounce::*;
 use audioctrl::meter::*;
@@ -19,8 +20,6 @@ use stm32h7xx_hal::{
     prelude::*,
     rcc::rec::AdcClkSel,
 };
-
-// pub use app::*;
 
 #[no_mangle]
 pub extern "Rust" fn external_now() -> TimerInstantU32<1_000_000> {
