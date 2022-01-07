@@ -1,6 +1,6 @@
 use crate::bus::*;
 use crate::meter::*;
-use crate::mcu::monotonics;
+use crate::timer;
 use fugit::{ExtU32, Instant};
 
 pub use Device::*;
@@ -34,7 +34,7 @@ pub enum Timeout {
 }
 
 fn timeout() -> Instant<u32, 1, 1000000_u32> {
-    monotonics::now() + 30.secs()
+    timer::now() + 30.secs()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -129,7 +129,7 @@ pub fn modify_state(state: State, msg: StateMsg) -> State {
 
         // timeout
         (State(PowerOn, Unmuted, _, Running(time)), Clock(_)) => {
-            if time < monotonics::now() {
+            if time < timer::now() {
                 let mut pattern = Pattern::new();
 
                 pattern.set_at(0, true);

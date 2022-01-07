@@ -132,9 +132,9 @@ impl LevelToPatternExt for Level {
     }
 }
 
-impl Into<&str> for Level {
-    fn into(self) -> &'static str {
-        match self {
+impl From<Level> for &str {
+    fn from(level: Level) -> &'static str {
+        match level {
             Clip => "clipping",
             Plus6 => "+6db",
             Nominal => "~0db",
@@ -146,12 +146,12 @@ impl Into<&str> for Level {
             Minus36 => "-18db",
             Detect => "detected",
         }
-    }
+    } 
 }
 
-impl Into<f32> for Level {
-    fn into(self) -> f32 {
-        match self {
+impl From<Level> for f32 {
+    fn from(level: Level) -> f32 {
+        match level {
             Clip => 0.9750,
             Plus6 => 0.8650,
             Nominal => 0.8150,
@@ -163,13 +163,13 @@ impl Into<f32> for Level {
             Minus36 => 0.5650,
             Detect => 0.3950,
         }
-    }
+    } 
 }
 
-impl Into<f32> for &Level {
-    fn into(self) -> f32 {
-        (*self).into()
-    }
+impl From<&Level> for f32 {
+    fn from(level: &Level) -> f32 {
+        (*level).into()
+    } 
 }
 
 impl From<f32> for Level {

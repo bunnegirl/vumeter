@@ -3,12 +3,11 @@
 #![feature(concat_idents)]
 #![feature(trait_alias)]
 
-mod bus;
-mod debounce;
-mod mcu;
-mod meter;
-mod mono_timer;
-mod state;
+pub mod bus;
+pub mod debounce;
+pub mod meter;
+pub mod timer;
+pub mod state;
 
 use core::panic::PanicInfo;
 use rtt_target::*;

@@ -13,6 +13,7 @@ pub enum Busses {
     ToState(StateMsg),
 }
 
+#[allow(clippy::enum_variant_names)]
 pub enum McuMsg {
     SetDevice(Device),
     SetMute(Signal),

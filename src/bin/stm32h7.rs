@@ -1,9 +1,14 @@
-use crate::bus::*;
-use crate::debounce::*;
-use crate::meter::*;
-use crate::mono_timer::MonoTimer;
-use crate::state::*;
-use fugit::ExtU32;
+#![no_main]
+#![no_std]
+#![feature(concat_idents)]
+#![feature(trait_alias)]
+
+use audioctrl::bus::*;
+use audioctrl::debounce::*;
+use audioctrl::meter::*;
+use audioctrl::timer::MonoTimer;
+use audioctrl::state::*;
+use fugit::{ExtU32, TimerInstantU32};
 use heapless::HistoryBuffer;
 use rtic::Mutex;
 use rtt_target::*;
@@ -15,35 +20,26 @@ use stm32h7xx_hal::{
     rcc::rec::AdcClkSel,
 };
 
-pub use app::*;
+// pub use app::*;
 
-struct Local {
-    device_in: PD14<Input<PullUp>>,
-    device_out: PD15<Output<PushPull>>,
-    mute_in: PD12<Input<PullUp>>,
-    mute_out: PD13<Output<PushPull>>,
-    power_in: PD10<Input<PullUp>>,
-    power_out: PE0<Output<PushPull>>,
-    power_led: PD11<Output<PushPull>>,
-    mon_clock: PD0<Input<PullUp>>,
-    mon_left: PD2<Input<PullUp>>,
-    mon_right: PD4<Input<PullUp>>,
-    meter: Meter<Output<PushPull>>,
+#[no_mangle]
+pub extern "Rust" fn external_now() -> TimerInstantU32<1_000_000> {
+    app::monotonics::now()
 }
 
-fn clock_send(_: clock_send::Context, count: u32) {
-    clock_send::spawn_after(10.millis(), if count == u32::MAX { 0 } else { count + 1 }).ok();
+fn clock_send(_: app::clock_send::Context, count: u32) {
+    app::clock_send::spawn_after(10.millis(), if count == u32::MAX { 0 } else { count + 1 }).ok();
 
     Clock(count).send();
 }
 
-fn message_dispatch(cx: message_dispatch::Context) {
-    let message_dispatch::SharedResources { mut state } = cx.shared;
+fn message_dispatch(cx: app::message_dispatch::Context) {
+    let app::message_dispatch::SharedResources { mut state } = cx.shared;
 
     if let Some(bus) = Q.dequeue() {
         match bus {
             ToMcu(msg) => {
-                message_recv::spawn(msg).ok();
+                app::message_recv::spawn(msg).ok();
             }
             ToState(msg) => {
                 state.lock(|state| {
@@ -54,7 +50,7 @@ fn message_dispatch(cx: message_dispatch::Context) {
     }
 }
 
-fn message_recv(cx: message_recv::Context, msg: McuMsg) {
+fn message_recv(cx: app::message_recv::Context, msg: McuMsg) {
     match msg {
         SetDevice(Headphones) => {
             cx.local.device_out.set_low().ok();
@@ -85,8 +81,8 @@ fn message_recv(cx: message_recv::Context, msg: McuMsg) {
     }
 }
 
-fn ctrl_change(cx: ctrl_change::Context) {
-    let ctrl_change::LocalResources {
+fn ctrl_change(cx: app::ctrl_change::Context) {
+    let app::ctrl_change::LocalResources {
         device_in,
         power_in,
         mute_in,
@@ -119,8 +115,8 @@ fn ctrl_change(cx: ctrl_change::Context) {
     }
 }
 
-fn level_change(cx: level_change::Context) {
-    let level_change::LocalResources {
+fn level_change(cx: app::level_change::Context) {
+    let app::level_change::LocalResources {
         mon_clock,
         mon_left,
         mon_right,

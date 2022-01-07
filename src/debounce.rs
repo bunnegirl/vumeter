@@ -1,4 +1,4 @@
-use crate::mcu::monotonics;
+use crate::timer;
 use fugit::{ExtU32, Instant};
 use heapless::{LinearMap};
 
@@ -12,7 +12,7 @@ pub trait DebouncersExt {
 impl<const SIZE: usize> DebouncersExt for Debouncers<SIZE> {
     fn is_ok(&self, id: usize) -> bool {
         if let Some(instant) = self.get(&id) {
-            return *instant < monotonics::now();
+            return *instant < timer::now();
         }
 
         true
@@ -20,9 +20,9 @@ impl<const SIZE: usize> DebouncersExt for Debouncers<SIZE> {
     
     fn update(&mut self, id: usize, delay: u32) {
         if let Some(instant) = self.get_mut(&id) {
-            *instant = monotonics::now() + delay.millis();
+            *instant = timer::now() + delay.millis();
         } else {
-            self.insert(id, monotonics::now() + delay.millis()).ok();
+            self.insert(id, timer::now() + delay.millis()).ok();
         }
     }
 }
