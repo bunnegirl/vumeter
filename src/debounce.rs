@@ -1,15 +1,15 @@
-use crate::timer;
+use crate::app::monotonics as timer;
 use fugit::{ExtU32, Instant};
 use heapless::LinearMap;
 
-pub type Debouncers<const SIZE: usize> = LinearMap<usize, Instant<u32, 1, 1000000>, SIZE>;
+pub type Debouncer<const SIZE: usize> = LinearMap<usize, Instant<u32, 1, 8000000>, SIZE>;
 
-pub trait DebouncersExt {
+pub trait DebouncerExt {
     fn is_ok(&self, id: usize) -> bool;
     fn update(&mut self, id: usize, delay: u32);
 }
 
-impl<const SIZE: usize> DebouncersExt for Debouncers<SIZE> {
+impl<const SIZE: usize> DebouncerExt for Debouncer<SIZE> {
     fn is_ok(&self, id: usize) -> bool {
         if let Some(instant) = self.get(&id) {
             return *instant < timer::now();
@@ -17,7 +17,7 @@ impl<const SIZE: usize> DebouncersExt for Debouncers<SIZE> {
 
         true
     }
-    
+
     fn update(&mut self, id: usize, delay: u32) {
         if let Some(instant) = self.get_mut(&id) {
             *instant = timer::now() + delay.millis();
