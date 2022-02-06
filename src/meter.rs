@@ -18,14 +18,20 @@ impl MeterStateExt for &mut State {
         let mut left_result = 0;
         let mut right_result = 0;
 
-        if let VolumeMeter(left, right, peaks, levels, ..) = self {
-            //
-            if let ShowLevels::On = levels {
+        if let VolumeMeter {
+            left,
+            right,
+            peaks,
+            levels,
+            ..
+        } = self
+        {
+            if *levels {
                 left_result |= left.level;
                 right_result |= right.level;
             }
 
-            if let ShowPeaks::On = peaks {
+            if *peaks {
                 left_result |= left.peak;
                 right_result |= right.peak;
             }

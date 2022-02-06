@@ -67,184 +67,104 @@ impl Message {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum ShowPeaks {
-    On,
-    Off,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ShowLevels {
-    On,
-    Off,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum HeadphoneOutput {
-    On,
-    Off,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum SpeakerOutput {
-    On,
-    Off,
-}
-
-#[derive(Debug, Clone, Copy)]
 pub enum State {
     Uninitialised,
-    VolumeMeter(
-        MeterChannel,
-        MeterChannel,
-        ShowPeaks,
-        ShowLevels,
-        HeadphoneOutput,
-        SpeakerOutput,
-    ),
+    VolumeMeter {
+        left: MeterChannel,
+        right: MeterChannel,
+        peaks: bool,
+        levels: bool,
+        headphones: bool,
+        speakers: bool,
+    },
 }
 
 impl State {
-    pub fn with_show_peaks(self, toggle: ShowPeaks) -> State {
-        if let VolumeMeter(left, right, _, levels, headphones, speakers) = self {
-            VolumeMeter(left, right, toggle, levels, headphones, speakers)
-        } else {
-            self
-        }
-    }
-
-    pub fn with_show_levels(self, toggle: ShowLevels) -> State {
-        if let VolumeMeter(left, right, peaks, _, headphones, speakers) = self {
-            VolumeMeter(left, right, peaks, toggle, headphones, speakers)
-        } else {
-            self
-        }
-    }
-
-    pub fn with_headphone_output(self, toggle: HeadphoneOutput) -> State {
-        if let VolumeMeter(left, right, peaks, levels, _, speakers) = self {
-            VolumeMeter(left, right, peaks, levels, toggle, speakers)
-        } else {
-            self
-        }
-    }
-
-    pub fn with_speaker_output(self, toggle: SpeakerOutput) -> State {
-        if let VolumeMeter(left, right, peaks, levels, headphones, _) = self {
-            VolumeMeter(left, right, peaks, levels, headphones, toggle)
-        } else {
-            self
-        }
-    }
-
-    pub fn recv(self, msg: Message) -> State {
-        match (self, msg) {
-            (Uninitialised, Initialise) => VolumeMeter(
-                MeterChannel::default(),
-                MeterChannel::default(),
-                ShowPeaks::On,
-                ShowLevels::On,
-                HeadphoneOutput::On,
-                SpeakerOutput::Off,
-            ),
-
-            (VolumeMeter(..), MeterUpdate(left_raw, right_raw)) => {
-                meter_update(self, left_raw, right_raw)
+    pub fn recv(mut self, msg: Message) -> State {
+        match (&mut self, msg) {
+            (Uninitialised, Initialise) => {
+                return VolumeMeter {
+                    left: MeterChannel::default(),
+                    right: MeterChannel::default(),
+                    peaks: true,
+                    levels: true,
+                    headphones: true,
+                    speakers: false,
+                }
             }
 
-            (VolumeMeter(..), MeterDecay) => meter_decay(self),
+            // calculate meter peak and level
+            (VolumeMeter { left, right, .. }, MeterUpdate(left_raw, right_raw)) => {
+                let calculate = |channel: &mut MeterChannel, input: f32| {
+                    let new = LEVELS
+                        .iter()
+                        .enumerate()
+                        .find(|(_, (level, _, _))| input >= *level);
+
+                    if let Some((index, (_, peak_decay_ms, level_decay_ms))) = new {
+                        let new_level = 0b1111_1111_1111 >> index;
+                        let new_peak = 0b1000_0000_0000 >> index;
+
+                        if new_peak >= channel.peak {
+                            channel.peak = new_peak;
+                            channel.peak_decay = time::now() + peak_decay_ms.millis();
+                        }
+
+                        if new_level >= channel.level {
+                            channel.level = new_level;
+                            channel.level_decay = time::now() + level_decay_ms.millis();
+                        }
+                    }
+                };
+
+                calculate(left, left_raw);
+                calculate(right, right_raw);
+            }
+
+            // decay meter peaks and levels
+            (VolumeMeter { left, right, .. }, MeterDecay) => {
+                let now = time::now();
+
+                if left.level_decay < now {
+                    left.level = 0;
+                }
+
+                if right.level_decay < now {
+                    right.level = 0;
+                }
+
+                if left.peak_decay < now {
+                    left.peak = 0;
+                }
+
+                if right.peak_decay < now {
+                    right.peak = 0;
+                }
+            }
 
             // toggle meter peaks
-            (VolumeMeter(_, _, ShowPeaks::Off, ..), KeypadUpdate(0)) => {
-                self.with_show_peaks(ShowPeaks::On)
-            }
-            (VolumeMeter(_, _, ShowPeaks::On, ..), KeypadUpdate(0)) => {
-                self.with_show_peaks(ShowPeaks::Off)
+            (VolumeMeter { peaks, .. }, KeypadUpdate(0)) => {
+                *peaks = !*peaks;
             }
 
             // toggle meter levels
-            (VolumeMeter(_, _, _, ShowLevels::Off, ..), KeypadUpdate(1)) => {
-                self.with_show_levels(ShowLevels::On)
-            }
-            (VolumeMeter(_, _, _, ShowLevels::On, ..), KeypadUpdate(1)) => {
-                self.with_show_levels(ShowLevels::Off)
+            (VolumeMeter { levels, .. }, KeypadUpdate(1)) => {
+                *levels = !*levels;
             }
 
-            // toggle output mute
-            (VolumeMeter(_, _, _, _, HeadphoneOutput::Off, ..), KeypadUpdate(2)) => {
-                self.with_headphone_output(HeadphoneOutput::On)
-            }
-            (VolumeMeter(_, _, _, _, HeadphoneOutput::On, ..), KeypadUpdate(2)) => {
-                self.with_headphone_output(HeadphoneOutput::Off)
+            // toggle headphones
+            (VolumeMeter { headphones, .. }, KeypadUpdate(2)) => {
+                *headphones = !*headphones;
             }
 
-            // toggle speaker output
-            (VolumeMeter(_, _, _, _, _, SpeakerOutput::Off), KeypadUpdate(3)) => {
-                self.with_speaker_output(SpeakerOutput::On)
-            }
-            (VolumeMeter(_, _, _, _, _, SpeakerOutput::On), KeypadUpdate(3)) => {
-                self.with_speaker_output(SpeakerOutput::Off)
+            // toggle speakers
+            (VolumeMeter { speakers, .. }, KeypadUpdate(3)) => {
+                *speakers = !*speakers;
             }
 
-            _ => self,
-        }
-    }
-}
+            _ => {}
+        };
 
-pub fn meter_update(state: State, left_raw: f32, right_raw: f32) -> State {
-    let calculate = |channel: &mut MeterChannel, input: f32| {
-        let new = LEVELS
-            .iter()
-            .enumerate()
-            .find(|(_, (level, _, _))| input >= *level);
-
-        if let Some((index, (_, peak_decay_ms, level_decay_ms))) = new {
-            let new_level = 0b1111_1111_1111 >> index;
-            let new_peak = 0b1000_0000_0000 >> index;
-
-            if new_peak >= channel.peak {
-                channel.peak = new_peak;
-                channel.peak_decay = time::now() + peak_decay_ms.millis();
-            }
-
-            if new_level >= channel.level {
-                channel.level = new_level;
-                channel.level_decay = time::now() + level_decay_ms.millis();
-            }
-        }
-    };
-
-    if let VolumeMeter(mut left, mut right, peaks, levels, headphones, speakers) = state {
-        calculate(&mut left, left_raw);
-        calculate(&mut right, right_raw);
-
-        VolumeMeter(left, right, peaks, levels, headphones, speakers)
-    } else {
-        state
-    }
-}
-
-fn meter_decay(state: State) -> State {
-    if let VolumeMeter(mut left, mut right, peaks, levels, headphones, speakers) = state {
-        let now = time::now();
-
-        if left.level_decay < now {
-            left.level = 0;
-        }
-
-        if right.level_decay < now {
-            right.level = 0;
-        }
-
-        if left.peak_decay < now {
-            left.peak = 0;
-        }
-
-        if right.peak_decay < now {
-            right.peak = 0;
-        }
-
-        VolumeMeter(left, right, peaks, levels, headphones, speakers)
-    } else {
-        state
+        self
     }
 }

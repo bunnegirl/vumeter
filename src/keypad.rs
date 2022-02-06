@@ -11,28 +11,21 @@ impl KeypadStateExt for &mut State {
     fn indicators(&mut self) -> usize {
         let mut result = 0;
 
-        if let VolumeMeter(_, _, peaks, levels, headphones, speakers) = self {
-            if let SpeakerOutput::On = speakers {
-                result += 1;
-            }
-
+        if let VolumeMeter {
+            peaks,
+            levels,
+            headphones,
+            speakers,
+            ..
+        } = self
+        {
+            result += *speakers as usize;
             result <<= 1;
-
-            if let HeadphoneOutput::On = headphones {
-                result += 1;
-            }
-
+            result += *headphones as usize;
             result <<= 1;
-
-            if let ShowLevels::On = levels {
-                result += 1;
-            }
-
+            result += *levels as usize;
             result <<= 1;
-
-            if let ShowPeaks::On = peaks {
-                result += 1;
-            }
+            result += *peaks as usize;
         }
 
         result
@@ -78,7 +71,7 @@ impl Keypad {
         key_trigger.clear_interrupt_pending_bit();
 
         if debouncer.is_ok(0) {
-            key_delay.delay_ms(50u32);
+            key_delay.delay_ms(1u32);
 
             while key_trigger.is_high() {
                 for index in 0..5 {
