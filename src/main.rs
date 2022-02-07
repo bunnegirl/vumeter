@@ -29,7 +29,7 @@ fn panic(info: &PanicInfo) -> ! {
     }
 }
 
-#[rtic::app(device = stm32f4xx_hal::pac, dispatchers = [SPI1, SPI3])]
+#[rtic::app(device = stm32f4xx_hal::pac, dispatchers = [SPI1, SPI2, SPI3])]
 mod app {
     use super::*;
 
@@ -60,6 +60,13 @@ mod app {
         let gpioa = cx.device.GPIOA.split();
         let gpiob = cx.device.GPIOB.split();
 
+        let mut brightness =
+            Timer::new(cx.device.TIM10, &clocks).pwm(gpiob.pb8.into_alternate(), 24.khz());
+        let max_duty = brightness.get_max_duty();
+
+        brightness.set_duty(max_duty);
+        brightness.enable();
+
         let meter_input = MeterInput::new(
             Timer::new(cx.device.TIM1, &clocks).pwm_input(24.khz(), gpioa.pa8.into_alternate()),
             gpioa.pa10.into_pull_up_input(),
@@ -73,7 +80,6 @@ mod app {
             gpiob.pb7.into_push_pull_output(),
         );
 
-        let key_delay = dwt.delay();
         let mut key_trigger = gpiob.pb4.into_pull_down_input();
         let key_register = (
             dwt.delay(),
@@ -87,12 +93,13 @@ mod app {
         key_trigger.trigger_on_edge(&mut cx.device.EXTI, Edge::Rising);
 
         timer::spawn().ok();
+        keypad_read::spawn().ok();
 
         Initialise.send();
 
         (
             Shared {
-                keypad: Keypad::new(key_delay, key_trigger, key_register),
+                keypad: Keypad::new(key_trigger, key_register),
                 meter: Meter::new(meter_input, meter_register),
                 state: State::Uninitialised,
             },
@@ -127,7 +134,7 @@ mod app {
         }
     }
 
-    #[task()]
+    #[task]
     fn timer(_cx: timer::Context) {
         MeterDecay.send();
 
@@ -135,13 +142,13 @@ mod app {
     }
 
     #[task(
-        binds = EXTI4,
+        priority = 1,
         shared = [
             keypad,
             state,
         ],
         local = [
-            debouncer: Debouncer<5> = Debouncer::new(),
+            debouncer: Debouncer<8> = Debouncer::new(),
         ],
     )]
     fn keypad_read(cx: keypad_read::Context) {
@@ -154,10 +161,13 @@ mod app {
         state.lock(|state| {
             keypad.lock(|keypad| keypad.read_input(state, debouncer));
         });
+
+        keypad_read::spawn_after(1.millis()).ok();
     }
 
     #[task(
         binds = TIM1_CC,
+        priority = 2,
         shared = [
             meter,
             state

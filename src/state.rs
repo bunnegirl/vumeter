@@ -7,32 +7,32 @@ pub use Message::*;
 pub use State::*;
 
 pub const DB_PLUS_12: f32 = 0.9800;
-pub const DB_PLUS_9: f32 = 0.9500;
+// pub const DB_PLUS_9: f32 = 0.9500;
 pub const DB_PLUS_6: f32 = 0.9200;
 pub const DB_PLUS_3: f32 = 0.8900;
 pub const DB_NOMINAL: f32 = 0.8600;
 pub const DB_MINUS_3: f32 = 0.8300;
 pub const DB_MINUS_6: f32 = 0.8000;
-pub const DB_MINUS_9: f32 = 0.7700;
+// pub const DB_MINUS_9: f32 = 0.7700;
 pub const DB_MINUS_12: f32 = 0.7400;
-pub const DB_MINUS_15: f32 = 0.7100;
+// pub const DB_MINUS_15: f32 = 0.7100;
 pub const DB_MINUS_18: f32 = 0.6800;
-pub const DB_MINUS_21: f32 = 0.6500;
-pub const DB_MINUS_24: f32 = 0.6200;
+// pub const DB_MINUS_21: f32 = 0.6500;
+// pub const DB_MINUS_24: f32 = 0.6200;
 pub const DB_MINUS_27: f32 = 0.5900;
-pub const DB_MINUS_30: f32 = 0.5600;
-pub const DB_MINUS_33: f32 = 0.5300;
+// pub const DB_MINUS_30: f32 = 0.5600;
+// pub const DB_MINUS_33: f32 = 0.5300;
 pub const DB_MINUS_36: f32 = 0.5000;
-pub const DB_MINUS_39: f32 = 0.4700;
-pub const DB_MINUS_42: f32 = 0.4400;
+// pub const DB_MINUS_39: f32 = 0.4700;
+// pub const DB_MINUS_42: f32 = 0.4400;
 pub const DB_MINUS_45: f32 = 0.4100;
-pub const DB_MINUS_48: f32 = 0.3800;
-pub const DB_MINUS_51: f32 = 0.3500;
+// pub const DB_MINUS_48: f32 = 0.3800;
+// pub const DB_MINUS_51: f32 = 0.3500;
 pub const DB_MINUS_54: f32 = 0.3200;
-pub const DB_MINUS_57: f32 = 0.2900;
-pub const DB_MINUS_60: f32 = 0.2600;
-pub const DB_MINUS_63: f32 = 0.2300;
-pub const DB_MINUS_66: f32 = 0.2000;
+// pub const DB_MINUS_57: f32 = 0.2900;
+// pub const DB_MINUS_60: f32 = 0.2600;
+// pub const DB_MINUS_63: f32 = 0.2300;
+// pub const DB_MINUS_66: f32 = 0.2000;
 
 // Input, Peak Delay, Level Delay
 const LEVELS: [(f32, u32, u32); 12] = [
@@ -143,22 +143,22 @@ impl State {
             }
 
             // toggle meter peaks
-            (VolumeMeter { peaks, .. }, KeypadUpdate(0)) => {
+            (VolumeMeter { peaks, .. }, KeypadUpdate(1)) => {
                 *peaks = !*peaks;
             }
 
             // toggle meter levels
-            (VolumeMeter { levels, .. }, KeypadUpdate(1)) => {
+            (VolumeMeter { levels, .. }, KeypadUpdate(3)) => {
                 *levels = !*levels;
             }
 
             // toggle headphones
-            (VolumeMeter { headphones, .. }, KeypadUpdate(2)) => {
+            (VolumeMeter { headphones, .. }, KeypadUpdate(5)) => {
                 *headphones = !*headphones;
             }
 
             // toggle speakers
-            (VolumeMeter { speakers, .. }, KeypadUpdate(3)) => {
+            (VolumeMeter { speakers, .. }, KeypadUpdate(7)) => {
                 *speakers = !*speakers;
             }
 

@@ -1,36 +1,7 @@
 use crate::debounce::*;
 use crate::shift::*;
 use crate::state::*;
-use stm32f4xx_hal::{dwt::Delay, gpio::*, prelude::*};
-
-trait KeypadStateExt {
-    fn indicators(&mut self) -> usize;
-}
-
-impl KeypadStateExt for &mut State {
-    fn indicators(&mut self) -> usize {
-        let mut result = 0;
-
-        if let VolumeMeter {
-            peaks,
-            levels,
-            headphones,
-            speakers,
-            ..
-        } = self
-        {
-            result += *speakers as usize;
-            result <<= 1;
-            result += *headphones as usize;
-            result <<= 1;
-            result += *levels as usize;
-            result <<= 1;
-            result += *peaks as usize;
-        }
-
-        result
-    }
-}
+use stm32f4xx_hal::{dwt::Delay, gpio::*};
 
 pub type KeyTrigger = Pin<Input<PullDown>, 'B', 4>;
 
@@ -42,56 +13,39 @@ pub type KeyRegister = (
 );
 
 pub struct Keypad {
-    key_delay: Delay,
-    key_trigger: KeyTrigger,
-    key_register: KeyRegister,
+    trigger: KeyTrigger,
+    register: KeyRegister,
 }
 
 impl Keypad {
-    pub fn new(key_delay: Delay, key_trigger: KeyTrigger, key_register: KeyRegister) -> Self {
-        Self {
-            key_delay,
-            key_trigger,
-            key_register,
-        }
+    pub fn new(trigger: KeyTrigger, register: KeyRegister) -> Self {
+        Self { trigger, register }
     }
 
-    pub fn write_output(&mut self, mut state: &mut State) {
-        let key_register = &mut self.key_register as &mut ShiftRegister8;
+    pub fn write_output(&mut self, mut _state: &mut State) {
+        let register = &mut self.register as &mut ShiftRegister8;
 
-        key_register.write(0b1111_0000 + state.indicators());
+        register.write(0b1111_1111);
     }
 
-    pub fn read_input(&mut self, mut state: &mut State, debouncer: &mut Debouncer<5>) {
-        let key_delay = &mut self.key_delay;
-        let key_trigger = &mut self.key_trigger;
-        let key_register = &mut self.key_register as &mut ShiftRegister8;
-        let indicators = state.indicators();
+    pub fn read_input(&mut self, mut _state: &mut State, debouncer: &mut Debouncer<8>) {
+        let trigger = &mut self.trigger;
+        let register = &mut self.register as &mut ShiftRegister8;
 
-        key_trigger.clear_interrupt_pending_bit();
+        trigger.clear_interrupt_pending_bit();
 
-        if debouncer.is_ok(0) {
-            key_delay.delay_ms(1u32);
+        for index in 0..8 {
+            register.write(1 << index);
 
-            while key_trigger.is_high() {
-                for index in 0..5 {
-                    key_register.write((1 << index << 4) + indicators);
-                    key_delay.delay_ms(1u32);
-
-                    if key_trigger.is_high() {
-                        if debouncer.is_ok(1 + index) {
-                            KeypadUpdate(index).send();
-                        }
-
-                        debouncer.update(1 + index, 50);
-                    }
+            if trigger.is_high() {
+                if debouncer.is_ok(1 + index) {
+                    KeypadUpdate(index).send();
                 }
 
-                key_register.write(0b1111_0000);
-                key_delay.delay_ms(1u32);
+                debouncer.update(1 + index, 50);
             }
         }
 
-        debouncer.update(0, 50);
+        register.write(0b1111_1111);
     }
 }
