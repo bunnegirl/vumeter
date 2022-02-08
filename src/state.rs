@@ -1,4 +1,5 @@
 use crate::app::monotonics as time;
+use crate::keypad::Key;
 use crate::meter::MeterChannel;
 use fugit::ExtU32;
 use heapless::mpmc::Q8;
@@ -33,21 +34,23 @@ pub const DB_MINUS_54: f32 = 0.3200;
 // pub const DB_MINUS_60: f32 = 0.2600;
 // pub const DB_MINUS_63: f32 = 0.2300;
 // pub const DB_MINUS_66: f32 = 0.2000;
+pub const DB_MINUS_INF: f32 = 0.0;
 
 // Input, Peak Delay, Level Delay
-const LEVELS: [(f32, u32, u32); 12] = [
-    (DB_PLUS_12, 2400, 50),
-    (DB_PLUS_6, 1500, 50),
-    (DB_PLUS_3, 900, 50),
-    (DB_NOMINAL, 600, 50),
-    (DB_MINUS_3, 300, 50),
-    (DB_MINUS_6, 300, 50),
-    (DB_MINUS_12, 300, 50),
-    (DB_MINUS_18, 300, 50),
-    (DB_MINUS_27, 300, 50),
-    (DB_MINUS_36, 300, 50),
-    (DB_MINUS_45, 300, 50),
-    (DB_MINUS_54, 300, 50),
+pub const LEVELS: [(f32, u32, u32); 13] = [
+    (DB_PLUS_12, 2400, 20),
+    (DB_PLUS_6, 1500, 20),
+    (DB_PLUS_3, 900, 20),
+    (DB_NOMINAL, 600, 20),
+    (DB_MINUS_3, 300, 20),
+    (DB_MINUS_6, 300, 20),
+    (DB_MINUS_12, 300, 20),
+    (DB_MINUS_18, 300, 20),
+    (DB_MINUS_27, 300, 20),
+    (DB_MINUS_36, 300, 20),
+    (DB_MINUS_45, 300, 20),
+    (DB_MINUS_54, 300, 20),
+    (DB_MINUS_INF, 0, 0),
 ];
 
 pub static Q: Q8<Message> = Q8::new();
@@ -55,9 +58,8 @@ pub static Q: Q8<Message> = Q8::new();
 #[derive(Debug, Clone, Copy)]
 pub enum Message {
     Initialise,
-    KeypadUpdate(usize),
+    KeypadUpdate(Key),
     MeterUpdate(f32, f32),
-    MeterDecay,
 }
 
 impl Message {
@@ -95,22 +97,23 @@ impl State {
 
             // calculate meter peak and level
             (VolumeMeter { left, right, .. }, MeterUpdate(left_raw, right_raw)) => {
-                let calculate = |channel: &mut MeterChannel, input: f32| {
+                let calculate = |channel: &mut MeterChannel, channel_raw: f32| {
+                    let now = time::now();
                     let new = LEVELS
                         .iter()
                         .enumerate()
-                        .find(|(_, (level, _, _))| input >= *level);
+                        .find(|(_, (level, _, _))| channel_raw >= *level);
 
                     if let Some((index, (_, peak_decay_ms, level_decay_ms))) = new {
                         let new_level = 0b1111_1111_1111 >> index;
                         let new_peak = 0b1000_0000_0000 >> index;
 
-                        if new_peak >= channel.peak {
+                        if new_peak >= channel.peak || channel.peak_decay < now {
                             channel.peak = new_peak;
                             channel.peak_decay = time::now() + peak_decay_ms.millis();
                         }
 
-                        if new_level >= channel.level {
+                        if new_level >= channel.level || channel.level_decay < now {
                             channel.level = new_level;
                             channel.level_decay = time::now() + level_decay_ms.millis();
                         }
@@ -121,44 +124,23 @@ impl State {
                 calculate(right, right_raw);
             }
 
-            // decay meter peaks and levels
-            (VolumeMeter { left, right, .. }, MeterDecay) => {
-                let now = time::now();
-
-                if left.level_decay < now {
-                    left.level = 0;
-                }
-
-                if right.level_decay < now {
-                    right.level = 0;
-                }
-
-                if left.peak_decay < now {
-                    left.peak = 0;
-                }
-
-                if right.peak_decay < now {
-                    right.peak = 0;
-                }
-            }
-
             // toggle meter peaks
-            (VolumeMeter { peaks, .. }, KeypadUpdate(1)) => {
+            (VolumeMeter { peaks, .. }, KeypadUpdate(Key::TogglePeaks)) => {
                 *peaks = !*peaks;
             }
 
             // toggle meter levels
-            (VolumeMeter { levels, .. }, KeypadUpdate(3)) => {
+            (VolumeMeter { levels, .. }, KeypadUpdate(Key::ToggleLevels)) => {
                 *levels = !*levels;
             }
 
             // toggle headphones
-            (VolumeMeter { headphones, .. }, KeypadUpdate(5)) => {
+            (VolumeMeter { headphones, .. }, KeypadUpdate(Key::ToggleHeadphones)) => {
                 *headphones = !*headphones;
             }
 
             // toggle speakers
-            (VolumeMeter { speakers, .. }, KeypadUpdate(7)) => {
+            (VolumeMeter { speakers, .. }, KeypadUpdate(Key::ToggleSpeakers)) => {
                 *speakers = !*speakers;
             }
 

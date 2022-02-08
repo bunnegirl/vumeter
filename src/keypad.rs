@@ -1,51 +1,75 @@
 use crate::debounce::*;
 use crate::shift::*;
 use crate::state::*;
-use stm32f4xx_hal::{dwt::Delay, gpio::*};
+#[allow(unused_imports)]
+use rtt_target::*;
+use stm32f4xx_hal::gpio::*;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Key {
+    Unassigned,
+    TogglePeaks,
+    ToggleLevels,
+    ToggleHeadphones,
+    ToggleSpeakers,
+}
 
 pub type KeyTrigger = Pin<Input<PullDown>, 'B', 4>;
 
-pub type KeyRegister = (
-    Delay,
+pub type KeyRegister = ShiftRegister<
+    8,
+    Key,
     Pin<Output<PushPull>, 'B', 3>,
     Pin<Output<PushPull>, 'A', 15>,
     Pin<Output<PushPull>, 'A', 12>,
-);
+>;
 
 pub struct Keypad {
+    debouncer: Debouncer<8, Key>,
     trigger: KeyTrigger,
     register: KeyRegister,
 }
 
 impl Keypad {
     pub fn new(trigger: KeyTrigger, register: KeyRegister) -> Self {
-        Self { trigger, register }
+        Self {
+            debouncer: Debouncer::new(),
+            trigger,
+            register,
+        }
     }
 
-    pub fn write_output(&mut self, mut _state: &mut State) {
-        let register = &mut self.register as &mut ShiftRegister8;
+    pub fn read(&mut self) {
+        use Key::*;
 
-        register.write(0b1111_1111);
-    }
-
-    pub fn read_input(&mut self, mut _state: &mut State, debouncer: &mut Debouncer<8>) {
         let trigger = &mut self.trigger;
-        let register = &mut self.register as &mut ShiftRegister8;
 
         trigger.clear_interrupt_pending_bit();
 
-        for index in 0..8 {
-            register.write(1 << index);
+        self.register.write(ToggleSpeakers, 0b1000_0000);
+        self.register.write(Unassigned, 0b0100_0000);
+        self.register.write(TogglePeaks, 0b0010_0000);
+        self.register.write(Unassigned, 0b0001_0000);
+        self.register.write(ToggleLevels, 0b0000_1000);
+        self.register.write(Unassigned, 0b0000_0100);
+        self.register.write(ToggleHeadphones, 0b0000_0010);
+        self.register.write(Unassigned, 0b0000_0001);
+    }
 
+    pub fn write(&mut self) {}
+
+    pub fn clock(&mut self) {
+        let trigger = &mut self.trigger;
+
+        if let Some(id) = self.register.clock() {
             if trigger.is_high() {
-                if debouncer.is_ok(1 + index) {
-                    KeypadUpdate(index).send();
+                if self.debouncer.is_ok(id) {
+                    // rprintln!("-{:?}-", );
+                    KeypadUpdate(id).send();
                 }
 
-                debouncer.update(1 + index, 50);
+                self.debouncer.update(id, 50);
             }
         }
-
-        register.write(0b1111_1111);
     }
 }

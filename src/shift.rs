@@ -1,42 +1,81 @@
-use cortex_m::prelude::_embedded_hal_blocking_delay_DelayUs;
-use stm32f4xx_hal::{dwt::Delay, hal::digital::v2::OutputPin};
+use heapless::Deque;
+#[allow(unused_imports)]
+use rtt_target::*;
+use stm32f4xx_hal::hal::digital::v2::{OutputPin, PinState};
 
-pub type ShiftRegister8 = dyn ShiftRegisterExt<8>;
-pub type ShiftRegister24 = dyn ShiftRegisterExt<24>;
+pub type ShiftBuffer<Id> = Deque<(Option<Id>, PinState, PinState, PinState), 2000>;
 
-pub trait ShiftRegisterExt<const LEN: usize> {
-    fn write(&mut self, data: usize);
+pub struct ShiftRegister<const LEN: usize, Id, Data, Latch, Clock> {
+    pub buffer: ShiftBuffer<Id>,
+    pub data: Data,
+    pub latch: Latch,
+    pub clock: Clock,
 }
 
-impl<const LEN: usize, D, L, C> ShiftRegisterExt<LEN> for (Delay, D, L, C)
+impl<const LEN: usize, Id, Data, Latch, Clock> ShiftRegister<LEN, Id, Data, Latch, Clock>
 where
-    D: OutputPin,
-    L: OutputPin,
-    C: OutputPin,
+    Id: Copy,
+    Data: OutputPin,
+    Latch: OutputPin,
+    Clock: OutputPin,
 {
-    fn write(&mut self, mut pattern: usize) {
-        let (delay, data, latch, clock) = self;
+    pub fn clock(&mut self) -> Option<Id> {
+        let Self {
+            buffer,
+            data,
+            latch,
+            clock,
+        } = self;
+
+        if let Some((id, data_state, latch_state, clock_state)) = buffer.pop_front() {
+            data.set_state(data_state).ok();
+            latch.set_state(latch_state).ok();
+            clock.set_state(clock_state).ok();
+
+            id
+        } else {
+            None
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
+    }
+
+    pub fn write(&mut self, id: Id, mut pattern: usize) {
+        let Self { buffer, .. } = self;
+
         let mut index = 0;
 
-        latch.set_low().ok();
+        buffer
+            .push_back((None, PinState::Low, PinState::Low, PinState::Low))
+            .ok();
 
         while index < LEN {
-            if 1 & pattern > 0 {
-                data.set_high().ok();
-            }
+            let data_state = if 1 & pattern > 0 && index <= LEN {
+                PinState::High
+            } else {
+                PinState::Low
+            };
 
-            clock.set_high().ok();
+            buffer
+                .push_back((Some(id), data_state, PinState::Low, PinState::Low))
+                .ok();
+
+            buffer
+                .push_back((None, data_state, PinState::Low, PinState::High))
+                .ok();
+
             pattern >>= 1;
-
-            delay.delay_us(1u32);
-
-            clock.set_low().ok();
-            data.set_low().ok();
-
-            delay.delay_us(1u32);
             index += 1;
         }
 
-        latch.set_high().ok();
+        buffer
+            .push_back((None, PinState::Low, PinState::High, PinState::Low))
+            .ok();
+
+        buffer
+            .push_back((None, PinState::Low, PinState::Low, PinState::Low))
+            .ok();
     }
 }

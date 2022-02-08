@@ -2,8 +2,9 @@ use crate::app::monotonics as time;
 use crate::app::TimerInstant;
 use crate::shift::*;
 use crate::state::*;
+#[allow(unused_imports)]
+use rtt_target::*;
 use stm32f4xx_hal::{
-    dwt::Delay,
     gpio::{gpioa::*, *},
     pac::TIM1,
     pwm_input::PwmInput,
@@ -41,12 +42,13 @@ impl MeterStateExt for &mut State {
     }
 }
 
-pub type MeterRegister = (
-    Delay,
+pub type MeterRegister = ShiftRegister<
+    24,
+    (),
     Pin<Output<PushPull>, 'B', 5>,
     Pin<Output<PushPull>, 'B', 6>,
     Pin<Output<PushPull>, 'B', 7>,
-);
+>;
 
 pub type MeterInputClock = PwmInput<TIM1, PA8<Alternate<PushPull, 1>>>;
 pub type MeterInputLeft = Pin<Input<PullUp>, 'A', 10>;
@@ -97,7 +99,7 @@ impl Default for MeterChannel {
 
 pub struct Meter {
     input: MeterInput,
-    register: MeterRegister,
+    pub register: MeterRegister,
 }
 
 impl Meter {
@@ -105,7 +107,7 @@ impl Meter {
         Self { input, register }
     }
 
-    pub fn read_input(&mut self, mut _state: &mut State) {
+    pub fn read(&mut self) {
         let MeterInput {
             clock_count,
             clock,
@@ -136,9 +138,7 @@ impl Meter {
         }
     }
 
-    pub fn write_output(&mut self, mut state: &mut State) {
-        let meter_register = &mut self.register as &mut ShiftRegister24;
-
+    pub fn write(&mut self, mut state: &mut State) {
         let mut shift_data = 0;
         let (left, right) = state.levels();
 
@@ -148,6 +148,10 @@ impl Meter {
         shift_data <<= 12;
         shift_data |= right.reverse_bits().rotate_left(12);
 
-        meter_register.write(shift_data);
+        self.register.write((), shift_data);
+    }
+
+    pub fn clock(&mut self) {
+        self.register.clock();
     }
 }

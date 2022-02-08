@@ -8,7 +8,6 @@ mod monotonic;
 mod shift;
 mod state;
 
-use crate::debounce::*;
 use crate::keypad::*;
 use crate::meter::*;
 use crate::monotonic::MonoTimer;
@@ -17,7 +16,7 @@ use core::panic::PanicInfo;
 use cortex_m::asm::nop;
 use fugit::{ExtU32, Instant};
 use rtt_target::*;
-use stm32f4xx_hal::{dwt::DwtExt, gpio::*, pac, prelude::*, timer::Timer};
+use stm32f4xx_hal::{gpio::*, pac, prelude::*, timer::Timer};
 
 #[inline(never)]
 #[panic_handler]
@@ -31,6 +30,8 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[rtic::app(device = stm32f4xx_hal::pac, dispatchers = [SPI1, SPI2, SPI3])]
 mod app {
+    use shift::{ShiftBuffer, ShiftRegister};
+
     use super::*;
 
     #[monotonic(binds = TIM2, default = true)]
@@ -55,7 +56,6 @@ mod app {
         let rcc = cx.device.RCC.constrain();
         let clocks = rcc.cfgr.freeze();
         let mono = MonoTimer::new(cx.device.TIM2, &clocks);
-        let dwt = cx.core.DWT.constrain(cx.core.DCB, &clocks);
 
         let gpioa = cx.device.GPIOA.split();
         let gpiob = cx.device.GPIOB.split();
@@ -73,27 +73,27 @@ mod app {
             gpioa.pa11.into_pull_up_input(),
         );
 
-        let meter_register = (
-            dwt.delay(),
-            gpiob.pb5.into_push_pull_output(),
-            gpiob.pb6.into_push_pull_output(),
-            gpiob.pb7.into_push_pull_output(),
-        );
+        let meter_register = ShiftRegister {
+            buffer: ShiftBuffer::new(),
+            data: gpiob.pb5.into_push_pull_output(),
+            latch: gpiob.pb6.into_push_pull_output(),
+            clock: gpiob.pb7.into_push_pull_output(),
+        };
 
         let mut key_trigger = gpiob.pb4.into_pull_down_input();
-        let key_register = (
-            dwt.delay(),
-            gpiob.pb3.into_push_pull_output(),
-            gpioa.pa15.into_push_pull_output(),
-            gpioa.pa12.into_push_pull_output(),
-        );
+        let key_register = ShiftRegister {
+            buffer: ShiftBuffer::new(),
+            data: gpiob.pb3.into_push_pull_output(),
+            latch: gpioa.pa15.into_push_pull_output(),
+            clock: gpioa.pa12.into_push_pull_output(),
+        };
 
         key_trigger.make_interrupt_source(&mut syscfg);
         key_trigger.enable_interrupt(&mut cx.device.EXTI);
         key_trigger.trigger_on_edge(&mut cx.device.EXTI, Edge::Rising);
 
-        timer::spawn().ok();
-        keypad_read::spawn().ok();
+        keypad::spawn().ok();
+        clock::spawn().ok();
 
         Initialise.send();
 
@@ -127,42 +127,49 @@ mod app {
                 state.lock(|state| {
                     *state = state.recv(msg);
 
-                    meter.lock(|meter| meter.write_output(state));
-                    keypad.lock(|keypad| keypad.write_output(state));
+                    meter.lock(|meter| meter.write(state));
+                    keypad.lock(|keypad| keypad.write());
                 });
             }
         }
-    }
-
-    #[task]
-    fn timer(_cx: timer::Context) {
-        MeterDecay.send();
-
-        timer::spawn_after(50.millis()).ok();
     }
 
     #[task(
         priority = 1,
         shared = [
             keypad,
-            state,
-        ],
-        local = [
-            debouncer: Debouncer<8> = Debouncer::new(),
+            meter,
         ],
     )]
-    fn keypad_read(cx: keypad_read::Context) {
-        let keypad_read::SharedResources {
+    fn clock(cx: clock::Context) {
+        let clock::SharedResources {
             mut keypad,
-            mut state,
+            mut meter,
         } = cx.shared;
-        let keypad_read::LocalResources { debouncer } = cx.local;
 
-        state.lock(|state| {
-            keypad.lock(|keypad| keypad.read_input(state, debouncer));
+        meter.lock(|meter| {
+            meter.clock();
         });
 
-        keypad_read::spawn_after(1.millis()).ok();
+        keypad.lock(|keypad| {
+            keypad.clock();
+        });
+
+        clock::spawn_after(50.micros()).ok();
+    }
+
+    #[task(
+        priority = 2,
+        shared = [
+            keypad,
+        ],
+    )]
+    fn keypad(cx: keypad::Context) {
+        let keypad::SharedResources { mut keypad } = cx.shared;
+
+        keypad.lock(|keypad| keypad.read());
+
+        keypad::spawn_after(50.millis()).ok();
     }
 
     #[task(
@@ -170,17 +177,11 @@ mod app {
         priority = 2,
         shared = [
             meter,
-            state
         ]
     )]
-    fn meter_read(cx: meter_read::Context) {
-        let meter_read::SharedResources {
-            mut meter,
-            mut state,
-        } = cx.shared;
+    fn meter(cx: meter::Context) {
+        let meter::SharedResources { mut meter } = cx.shared;
 
-        state.lock(|state| {
-            meter.lock(|meter| meter.read_input(state));
-        });
+        meter.lock(|meter| meter.read());
     }
 }
