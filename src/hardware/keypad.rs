@@ -5,14 +5,19 @@ use crate::runtime::Message::*;
 use rtt_target::*;
 use stm32f4xx_hal::gpio::*;
 
+pub enum AudioOutput {
+    Headphones,
+    Speakers,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
-    Unassigned,
+    Unassigned(usize),
+    ToggleBrightness,
     TogglePeaks,
     ToggleLevels,
-    ToggleHeadphones,
-    ToggleSpeakers,
-    ToggleBrightness,
+    ToggleOutput,
+    ToggleMute,
 }
 
 pub type KeyTrigger = Pin<Input<PullDown>, 'B', 4>;
@@ -43,14 +48,14 @@ impl Keypad {
     pub fn read(&mut self) {
         use Key::*;
 
-        self.register.write(ToggleSpeakers, 0b1000_0000);
-        self.register.write(ToggleBrightness, 0b0100_0000);
+        self.register.write(ToggleBrightness, 0b1000_0000);
+        self.register.write(ToggleMute, 0b0100_0000);
         self.register.write(TogglePeaks, 0b0010_0000);
-        self.register.write(Unassigned, 0b0001_0000);
+        self.register.write(ToggleOutput, 0b0001_0000);
         self.register.write(ToggleLevels, 0b0000_1000);
-        self.register.write(Unassigned, 0b0000_0100);
-        self.register.write(ToggleHeadphones, 0b0000_0010);
-        self.register.write(Unassigned, 0b0000_0001);
+        self.register.write(Unassigned(2), 0b0000_0100);
+        self.register.write(Unassigned(1), 0b0000_0010);
+        self.register.write(Unassigned(3), 0b0000_0001);
     }
 
     pub fn write(&mut self) {

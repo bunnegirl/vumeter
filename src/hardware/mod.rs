@@ -1,4 +1,5 @@
 pub mod brightness;
+pub mod control;
 pub mod debounce;
 pub mod keypad;
 pub mod meter;
@@ -9,6 +10,7 @@ pub use crate::hardware::inner::monotonics as time;
 pub use crate::hardware::inner::TimerInstant;
 
 use crate::hardware::brightness::*;
+use crate::hardware::control::*;
 use crate::hardware::keypad::*;
 use crate::hardware::meter::*;
 use crate::hardware::monotonic::*;
@@ -29,6 +31,7 @@ mod inner {
     #[shared]
     struct Shared {
         brightness: Brightness,
+        control: Control,
         keypad: Keypad,
         meter: Meter,
         state: State,
@@ -49,17 +52,12 @@ mod inner {
         let gpioa = cx.device.GPIOA.split();
         let gpiob = cx.device.GPIOB.split();
 
+        let audio_output_dsp = gpiob.pb12.into_push_pull_output();
+        let audio_output_ctrl = gpiob.pb13.into_push_pull_output();
+        let audio_mute_ctrl = gpiob.pb14.into_push_pull_output();
+
         let brightness_output =
             Timer::new(cx.device.TIM10, &clocks).pwm(gpiob.pb8.into_alternate(), 24.khz());
-
-        // let mut brightness =
-        //     Timer::new(cx.device.TIM10, &clocks).pwm(gpiob.pb8.into_alternate(), 24.khz());
-        // let max_duty = brightness.get_max_duty();
-
-        // const BRIGHTNESS: u16 = 1;
-
-        // brightness.set_duty(max_duty / BRIGHTNESS);
-        // brightness.enable();
 
         let mut meter_clock = gpioa.pa8.into_pull_up_input();
 
@@ -96,6 +94,7 @@ mod inner {
         (
             Shared {
                 brightness: Brightness::new(brightness_output),
+                control: Control::new(audio_output_dsp, audio_output_ctrl, audio_mute_ctrl),
                 keypad: Keypad::new(key_trigger, key_register),
                 meter: Meter::new(meter_input, meter_register),
                 state: State::Booting,
@@ -107,6 +106,7 @@ mod inner {
 
     #[idle(
         shared = [
+            control,
             brightness,
             meter,
             state,
@@ -114,6 +114,7 @@ mod inner {
     )]
     fn idle(cx: idle::Context) -> ! {
         let idle::SharedResources {
+            mut control,
             mut brightness,
             mut meter,
             mut state,
@@ -124,8 +125,9 @@ mod inner {
                 state.lock(|state| {
                     *state = state.recv(msg);
 
-                    meter.lock(|meter| meter.write(state));
                     brightness.lock(|brightness| brightness.write(state));
+                    control.lock(|control| control.write(state));
+                    meter.lock(|meter| meter.write(state));
                 });
             }
         }

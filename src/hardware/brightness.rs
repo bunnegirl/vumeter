@@ -15,12 +15,6 @@ pub enum BrightnessLevel {
     Low,
 }
 
-impl Default for BrightnessLevel {
-    fn default() -> Self {
-        BrightnessLevel::High
-    }
-}
-
 pub struct Brightness {
     output: BrightnessOutput,
 }

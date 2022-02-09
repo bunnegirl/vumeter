@@ -1,9 +1,12 @@
 use crate::hardware::brightness::BrightnessLevel;
+use crate::hardware::control::AudioOutput;
 use crate::hardware::keypad::Key;
 use crate::hardware::meter::MeterChannel;
 use crate::hardware::time;
 use fugit::ExtU32;
 use heapless::mpmc::Q8;
+#[allow(unused_imports)]
+use rtt_target::*;
 
 pub use Message::*;
 pub use State::*;
@@ -73,13 +76,13 @@ impl Message {
 pub enum State {
     Booting,
     Running {
+        audio_output: AudioOutput,
+        audio_mute: bool,
         brightness: BrightnessLevel,
         left: MeterChannel,
         right: MeterChannel,
         peaks: bool,
         levels: bool,
-        headphones: bool,
-        speakers: bool,
     },
     Standby,
 }
@@ -90,13 +93,13 @@ impl State {
         match (&mut self, msg) {
             (Booting, Booted) => {
                 return Running {
-                    brightness: BrightnessLevel::default(),
+                    audio_output: AudioOutput::Headphones,
+                    audio_mute: false,
+                    brightness: BrightnessLevel::High,
                     left: MeterChannel::default(),
                     right: MeterChannel::default(),
                     peaks: true,
                     levels: true,
-                    headphones: true,
-                    speakers: false,
                 }
             }
 
@@ -132,30 +135,69 @@ impl State {
             // toggle meter peaks
             (Running { peaks, .. }, KeypadUpdate(Key::TogglePeaks)) => {
                 *peaks = !*peaks;
+
+                rprintln!("turned {} peaks display", if *peaks { "on" } else { "off" });
             }
 
             // toggle meter levels
             (Running { levels, .. }, KeypadUpdate(Key::ToggleLevels)) => {
                 *levels = !*levels;
+
+                rprintln!(
+                    "turned {} levels display",
+                    if *levels { "on" } else { "off" }
+                );
             }
 
-            // toggle headphones
-            (Running { headphones, .. }, KeypadUpdate(Key::ToggleHeadphones)) => {
-                *headphones = !*headphones;
+            // toggle output between headphones and speakers
+            (Running { audio_output, .. }, KeypadUpdate(Key::ToggleOutput)) => {
+                *audio_output = match audio_output {
+                    AudioOutput::Headphones => {
+                        rprintln!("switched to speaker output");
+
+                        AudioOutput::Speakers
+                    }
+                    AudioOutput::Speakers => {
+                        rprintln!("switched to headphone output");
+
+                        AudioOutput::Headphones
+                    }
+                }
             }
 
-            // toggle speakers
-            (Running { speakers, .. }, KeypadUpdate(Key::ToggleSpeakers)) => {
-                *speakers = !*speakers;
+            // toggle output mute
+            (Running { audio_mute, .. }, KeypadUpdate(Key::ToggleMute)) => {
+                *audio_mute = !*audio_mute;
+
+                rprintln!(
+                    "{} audio output",
+                    if *audio_mute { "muted" } else { "unmuted" }
+                );
             }
 
             // toggle brightness
             (Running { brightness, .. }, KeypadUpdate(Key::ToggleBrightness)) => {
                 *brightness = match brightness {
-                    BrightnessLevel::High => BrightnessLevel::Medium,
-                    BrightnessLevel::Medium => BrightnessLevel::Low,
-                    BrightnessLevel::Low => BrightnessLevel::High,
+                    BrightnessLevel::High => {
+                        rprintln!("switched to medium brightness");
+
+                        BrightnessLevel::Medium
+                    }
+                    BrightnessLevel::Medium => {
+                        rprintln!("switched to low brightness");
+
+                        BrightnessLevel::Low
+                    }
+                    BrightnessLevel::Low => {
+                        rprintln!("switched to high brightness");
+
+                        BrightnessLevel::High
+                    }
                 };
+            }
+
+            (Running { .. }, KeypadUpdate(Key::Unassigned(num))) => {
+                rprintln!("unassigned key {} pressed", num);
             }
 
             _ => {}
