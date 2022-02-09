@@ -1,6 +1,6 @@
-use crate::debounce::*;
-use crate::shift::*;
-use crate::state::*;
+use crate::hardware::debounce::*;
+use crate::hardware::shift::*;
+use crate::runtime::Message::*;
 #[allow(unused_imports)]
 use rtt_target::*;
 use stm32f4xx_hal::gpio::*;
@@ -56,7 +56,9 @@ impl Keypad {
         self.register.write(Unassigned, 0b0000_0001);
     }
 
-    pub fn write(&mut self) {}
+    pub fn write(&mut self) {
+        todo!("write to indicator leds, when we have indicator leds");
+    }
 
     pub fn clock(&mut self) {
         let trigger = &mut self.trigger;

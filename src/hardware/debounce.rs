@@ -1,4 +1,4 @@
-use crate::app::monotonics as timer;
+use crate::hardware::time;
 use fugit::{ExtU32, Instant};
 use heapless::LinearMap;
 
@@ -15,7 +15,7 @@ where
 {
     fn is_ok(&self, id: Id) -> bool {
         if let Some(instant) = self.get(&id) {
-            return *instant < timer::now();
+            return *instant < time::now();
         }
 
         true
@@ -23,9 +23,9 @@ where
 
     fn update(&mut self, id: Id, delay: u32) {
         if let Some(instant) = self.get_mut(&id) {
-            *instant = timer::now() + delay.millis();
+            *instant = time::now() + delay.millis();
         } else {
-            self.insert(id, timer::now() + delay.millis()).ok();
+            self.insert(id, time::now() + delay.millis()).ok();
         }
     }
 }

@@ -58,16 +58,16 @@ where
                 PinState::Low
             };
 
-            buffer
-                .push_back((Some(id), data_state, PinState::Low, PinState::Low))
-                .ok();
-
-            buffer
-                .push_back((None, data_state, PinState::Low, PinState::High))
-                .ok();
-
             pattern >>= 1;
             index += 1;
+
+            buffer
+                .push_back((None, data_state, PinState::Low, PinState::Low))
+                .ok();
+
+            buffer
+                .push_back((Some(id), data_state, PinState::Low, PinState::High))
+                .ok();
         }
 
         buffer

@@ -1,7 +1,7 @@
-use crate::app::monotonics as time;
-use crate::app::TimerInstant;
-use crate::shift::*;
-use crate::state::*;
+use crate::hardware::shift::*;
+use crate::hardware::time;
+use crate::hardware::TimerInstant;
+use crate::runtime::{Message::*, State, State::*};
 #[allow(unused_imports)]
 use rtt_target::*;
 use stm32f4xx_hal::{
@@ -19,7 +19,7 @@ impl MeterStateExt for &mut State {
         let mut left_result = 0;
         let mut right_result = 0;
 
-        if let VolumeMeter {
+        if let Running {
             left,
             right,
             peaks,
@@ -118,8 +118,8 @@ impl Meter {
         } = &mut self.input;
 
         if clock.is_valid_capture() {
-            if *clock_count == 220 {
-                MeterUpdate(*left_count as f32 / 220.0, *right_count as f32 / 220.0).send();
+            if *clock_count == 440 {
+                MeterUpdate(*left_count as f32 / 440.0, *right_count as f32 / 440.0).send();
 
                 *clock_count = 0;
                 *left_count = 0;

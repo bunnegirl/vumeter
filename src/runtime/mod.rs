@@ -1,6 +1,6 @@
-use crate::app::monotonics as time;
-use crate::keypad::Key;
-use crate::meter::MeterChannel;
+use crate::hardware::keypad::Key;
+use crate::hardware::meter::MeterChannel;
+use crate::hardware::time;
 use fugit::ExtU32;
 use heapless::mpmc::Q8;
 
@@ -50,14 +50,14 @@ pub const LEVELS: [(f32, u32, u32); 13] = [
     (DB_MINUS_36, 300, 20),
     (DB_MINUS_45, 300, 20),
     (DB_MINUS_54, 300, 20),
-    (DB_MINUS_INF, 0, 0),
+    (DB_MINUS_INF, 300, 20),
 ];
 
 pub static Q: Q8<Message> = Q8::new();
 
 #[derive(Debug, Clone, Copy)]
 pub enum Message {
-    Initialise,
+    Booted,
     KeypadUpdate(Key),
     MeterUpdate(f32, f32),
 }
@@ -70,8 +70,8 @@ impl Message {
 
 #[derive(Debug, Clone, Copy)]
 pub enum State {
-    Uninitialised,
-    VolumeMeter {
+    Booting,
+    Running {
         left: MeterChannel,
         right: MeterChannel,
         peaks: bool,
@@ -79,13 +79,15 @@ pub enum State {
         headphones: bool,
         speakers: bool,
     },
+    Standby,
 }
 
 impl State {
+    #[must_use]
     pub fn recv(mut self, msg: Message) -> State {
         match (&mut self, msg) {
-            (Uninitialised, Initialise) => {
-                return VolumeMeter {
+            (Booting, Booted) => {
+                return Running {
                     left: MeterChannel::default(),
                     right: MeterChannel::default(),
                     peaks: true,
@@ -96,7 +98,7 @@ impl State {
             }
 
             // calculate meter peak and level
-            (VolumeMeter { left, right, .. }, MeterUpdate(left_raw, right_raw)) => {
+            (Running { left, right, .. }, MeterUpdate(left_raw, right_raw)) => {
                 let calculate = |channel: &mut MeterChannel, channel_raw: f32| {
                     let now = time::now();
                     let new = LEVELS
@@ -125,22 +127,22 @@ impl State {
             }
 
             // toggle meter peaks
-            (VolumeMeter { peaks, .. }, KeypadUpdate(Key::TogglePeaks)) => {
+            (Running { peaks, .. }, KeypadUpdate(Key::TogglePeaks)) => {
                 *peaks = !*peaks;
             }
 
             // toggle meter levels
-            (VolumeMeter { levels, .. }, KeypadUpdate(Key::ToggleLevels)) => {
+            (Running { levels, .. }, KeypadUpdate(Key::ToggleLevels)) => {
                 *levels = !*levels;
             }
 
             // toggle headphones
-            (VolumeMeter { headphones, .. }, KeypadUpdate(Key::ToggleHeadphones)) => {
+            (Running { headphones, .. }, KeypadUpdate(Key::ToggleHeadphones)) => {
                 *headphones = !*headphones;
             }
 
             // toggle speakers
-            (VolumeMeter { speakers, .. }, KeypadUpdate(Key::ToggleSpeakers)) => {
+            (Running { speakers, .. }, KeypadUpdate(Key::ToggleSpeakers)) => {
                 *speakers = !*speakers;
             }
 
