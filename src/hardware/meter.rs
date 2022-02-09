@@ -4,18 +4,28 @@ use crate::hardware::TimerInstant;
 use crate::runtime::{Message::*, State, State::*};
 #[allow(unused_imports)]
 use rtt_target::*;
-use stm32f4xx_hal::{
-    gpio::{gpioa::*, *},
-    pac::TIM1,
-    pwm_input::PwmInput,
-};
+use stm32f4xx_hal::gpio::*;
+
+/// the number of rising and falling edges on the
+/// clock pin that can occur per the left and right
+/// input period
+const CLOCKS_PER_INPUT: u32 = 96;
+/// how many clocks to read before sending the read
+/// average to state.
+///
+/// the lower this number the noisier the average,
+/// the higher, the more delay you add.
+///
+/// using 96 * 16 results in a 30ms delay when the
+/// clock is running at 24khz.
+const CLOCKS_PER_READ: u32 = CLOCKS_PER_INPUT * 16;
 
 trait MeterStateExt {
-    fn levels(&mut self) -> (usize, usize);
+    fn levels(&self) -> (usize, usize);
 }
 
-impl MeterStateExt for &mut State {
-    fn levels(&mut self) -> (usize, usize) {
+impl MeterStateExt for &State {
+    fn levels(&self) -> (usize, usize) {
         let mut left_result = 0;
         let mut right_result = 0;
 
@@ -50,7 +60,7 @@ pub type MeterRegister = ShiftRegister<
     Pin<Output<PushPull>, 'B', 7>,
 >;
 
-pub type MeterInputClock = PwmInput<TIM1, PA8<Alternate<PushPull, 1>>>;
+pub type MeterInputClock = Pin<Input<PullUp>, 'A', 8>;
 pub type MeterInputLeft = Pin<Input<PullUp>, 'A', 10>;
 pub type MeterInputRight = Pin<Input<PullUp>, 'A', 11>;
 
@@ -117,28 +127,32 @@ impl Meter {
             right_count,
         } = &mut self.input;
 
-        if clock.is_valid_capture() {
-            if *clock_count == 440 {
-                MeterUpdate(*left_count as f32 / 440.0, *right_count as f32 / 440.0).send();
+        clock.clear_interrupt_pending_bit();
 
-                *clock_count = 0;
-                *left_count = 0;
-                *right_count = 0;
-            }
+        if *clock_count == CLOCKS_PER_READ {
+            MeterUpdate(
+                *left_count as f32 / CLOCKS_PER_READ as f32,
+                *right_count as f32 / CLOCKS_PER_READ as f32,
+            )
+            .send();
 
-            if left.is_high() {
-                *left_count += 1;
-            }
-
-            if right.is_high() {
-                *right_count += 1;
-            }
-
-            *clock_count += 1;
+            *clock_count = 0;
+            *left_count = 0;
+            *right_count = 0;
         }
+
+        if left.is_high() {
+            *left_count += 1;
+        }
+
+        if right.is_high() {
+            *right_count += 1;
+        }
+
+        *clock_count += 1;
     }
 
-    pub fn write(&mut self, mut state: &mut State) {
+    pub fn write(&mut self, state: &State) {
         let mut shift_data = 0;
         let (left, right) = state.levels();
 

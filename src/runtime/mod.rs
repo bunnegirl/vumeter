@@ -1,3 +1,4 @@
+use crate::hardware::brightness::BrightnessLevel;
 use crate::hardware::keypad::Key;
 use crate::hardware::meter::MeterChannel;
 use crate::hardware::time;
@@ -38,19 +39,19 @@ pub const DB_MINUS_INF: f32 = 0.0;
 
 // Input, Peak Delay, Level Delay
 pub const LEVELS: [(f32, u32, u32); 13] = [
-    (DB_PLUS_12, 2400, 20),
-    (DB_PLUS_6, 1500, 20),
-    (DB_PLUS_3, 900, 20),
-    (DB_NOMINAL, 600, 20),
-    (DB_MINUS_3, 300, 20),
-    (DB_MINUS_6, 300, 20),
-    (DB_MINUS_12, 300, 20),
-    (DB_MINUS_18, 300, 20),
-    (DB_MINUS_27, 300, 20),
-    (DB_MINUS_36, 300, 20),
-    (DB_MINUS_45, 300, 20),
-    (DB_MINUS_54, 300, 20),
-    (DB_MINUS_INF, 300, 20),
+    (DB_PLUS_12, 2400, 0),
+    (DB_PLUS_6, 1500, 0),
+    (DB_PLUS_3, 900, 0),
+    (DB_NOMINAL, 600, 0),
+    (DB_MINUS_3, 300, 0),
+    (DB_MINUS_6, 300, 0),
+    (DB_MINUS_12, 300, 0),
+    (DB_MINUS_18, 300, 0),
+    (DB_MINUS_27, 300, 0),
+    (DB_MINUS_36, 300, 0),
+    (DB_MINUS_45, 300, 0),
+    (DB_MINUS_54, 300, 0),
+    (DB_MINUS_INF, 300, 0),
 ];
 
 pub static Q: Q8<Message> = Q8::new();
@@ -72,6 +73,7 @@ impl Message {
 pub enum State {
     Booting,
     Running {
+        brightness: BrightnessLevel,
         left: MeterChannel,
         right: MeterChannel,
         peaks: bool,
@@ -88,6 +90,7 @@ impl State {
         match (&mut self, msg) {
             (Booting, Booted) => {
                 return Running {
+                    brightness: BrightnessLevel::default(),
                     left: MeterChannel::default(),
                     right: MeterChannel::default(),
                     peaks: true,
@@ -144,6 +147,15 @@ impl State {
             // toggle speakers
             (Running { speakers, .. }, KeypadUpdate(Key::ToggleSpeakers)) => {
                 *speakers = !*speakers;
+            }
+
+            // toggle brightness
+            (Running { brightness, .. }, KeypadUpdate(Key::ToggleBrightness)) => {
+                *brightness = match brightness {
+                    BrightnessLevel::High => BrightnessLevel::Medium,
+                    BrightnessLevel::Medium => BrightnessLevel::Low,
+                    BrightnessLevel::Low => BrightnessLevel::High,
+                };
             }
 
             _ => {}

@@ -1,3 +1,4 @@
+pub mod brightness;
 pub mod debounce;
 pub mod keypad;
 pub mod meter;
@@ -7,6 +8,7 @@ pub mod shift;
 pub use crate::hardware::inner::monotonics as time;
 pub use crate::hardware::inner::TimerInstant;
 
+use crate::hardware::brightness::*;
 use crate::hardware::keypad::*;
 use crate::hardware::meter::*;
 use crate::hardware::monotonic::*;
@@ -26,6 +28,7 @@ mod inner {
 
     #[shared]
     struct Shared {
+        brightness: Brightness,
         keypad: Keypad,
         meter: Meter,
         state: State,
@@ -46,15 +49,26 @@ mod inner {
         let gpioa = cx.device.GPIOA.split();
         let gpiob = cx.device.GPIOB.split();
 
-        let mut brightness =
-            Timer::new(cx.device.TIM10, &clocks).pwm(gpiob.pb8.into_alternate(), 48.khz());
-        let max_duty = brightness.get_max_duty();
+        let brightness_output =
+            Timer::new(cx.device.TIM10, &clocks).pwm(gpiob.pb8.into_alternate(), 24.khz());
 
-        brightness.set_duty(max_duty);
-        brightness.enable();
+        // let mut brightness =
+        //     Timer::new(cx.device.TIM10, &clocks).pwm(gpiob.pb8.into_alternate(), 24.khz());
+        // let max_duty = brightness.get_max_duty();
+
+        // const BRIGHTNESS: u16 = 1;
+
+        // brightness.set_duty(max_duty / BRIGHTNESS);
+        // brightness.enable();
+
+        let mut meter_clock = gpioa.pa8.into_pull_up_input();
+
+        meter_clock.make_interrupt_source(&mut syscfg);
+        meter_clock.enable_interrupt(&mut cx.device.EXTI);
+        meter_clock.trigger_on_edge(&mut cx.device.EXTI, Edge::RisingFalling);
 
         let meter_input = MeterInput::new(
-            Timer::new(cx.device.TIM1, &clocks).pwm_input(24.khz(), gpioa.pa8.into_alternate()),
+            meter_clock,
             gpioa.pa10.into_pull_up_input(),
             gpioa.pa11.into_pull_up_input(),
         );
@@ -66,17 +80,13 @@ mod inner {
             clock: gpiob.pb7.into_push_pull_output(),
         };
 
-        let mut key_trigger = gpiob.pb4.into_pull_down_input();
+        let key_trigger = gpiob.pb4.into_pull_down_input();
         let key_register = KeyRegister {
             buffer: ShiftBuffer::new(),
             data: gpiob.pb3.into_push_pull_output(),
             latch: gpioa.pa15.into_push_pull_output(),
             clock: gpioa.pa12.into_push_pull_output(),
         };
-
-        key_trigger.make_interrupt_source(&mut syscfg);
-        key_trigger.enable_interrupt(&mut cx.device.EXTI);
-        key_trigger.trigger_on_edge(&mut cx.device.EXTI, Edge::Rising);
 
         keypad::spawn().ok();
         clock::spawn().ok();
@@ -85,6 +95,7 @@ mod inner {
 
         (
             Shared {
+                brightness: Brightness::new(brightness_output),
                 keypad: Keypad::new(key_trigger, key_register),
                 meter: Meter::new(meter_input, meter_register),
                 state: State::Booting,
@@ -96,14 +107,14 @@ mod inner {
 
     #[idle(
         shared = [
-            keypad,
+            brightness,
             meter,
             state,
         ]
     )]
     fn idle(cx: idle::Context) -> ! {
         let idle::SharedResources {
-            keypad: _,
+            mut brightness,
             mut meter,
             mut state,
         } = cx.shared;
@@ -114,7 +125,7 @@ mod inner {
                     *state = state.recv(msg);
 
                     meter.lock(|meter| meter.write(state));
-                    // keypad.lock(|keypad| keypad.write());
+                    brightness.lock(|brightness| brightness.write(state));
                 });
             }
         }
@@ -159,7 +170,7 @@ mod inner {
     }
 
     #[task(
-        binds = TIM1_CC,
+        binds = EXTI9_5,
         priority = 2,
         shared = [
             meter,

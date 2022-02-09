@@ -12,6 +12,7 @@ pub enum Key {
     ToggleLevels,
     ToggleHeadphones,
     ToggleSpeakers,
+    ToggleBrightness,
 }
 
 pub type KeyTrigger = Pin<Input<PullDown>, 'B', 4>;
@@ -42,12 +43,8 @@ impl Keypad {
     pub fn read(&mut self) {
         use Key::*;
 
-        let trigger = &mut self.trigger;
-
-        trigger.clear_interrupt_pending_bit();
-
         self.register.write(ToggleSpeakers, 0b1000_0000);
-        self.register.write(Unassigned, 0b0100_0000);
+        self.register.write(ToggleBrightness, 0b0100_0000);
         self.register.write(TogglePeaks, 0b0010_0000);
         self.register.write(Unassigned, 0b0001_0000);
         self.register.write(ToggleLevels, 0b0000_1000);
@@ -66,7 +63,6 @@ impl Keypad {
         if let Some(id) = self.register.clock() {
             if trigger.is_high() {
                 if self.debouncer.is_ok(id) {
-                    // rprintln!("-{:?}-", );
                     KeypadUpdate(id).send();
                 }
 
