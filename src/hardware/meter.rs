@@ -1,6 +1,6 @@
 use crate::hardware::shift::*;
 use crate::hardware::time;
-use crate::hardware::TimerInstant;
+use crate::hardware::TimeInstant;
 use crate::runtime::{Message::*, State, State::*};
 #[allow(unused_imports)]
 use rtt_target::*;
@@ -89,9 +89,9 @@ impl MeterInput {
 #[derive(Debug, Clone, Copy)]
 pub struct MeterChannel {
     pub level: usize,
-    pub level_decay: TimerInstant,
+    pub level_decay: TimeInstant,
     pub peak: usize,
-    pub peak_decay: TimerInstant,
+    pub peak_decay: TimeInstant,
     pub calculated: usize,
 }
 

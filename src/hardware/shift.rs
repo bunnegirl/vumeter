@@ -66,7 +66,7 @@ where
                 .ok();
 
             buffer
-                .push_back((Some(id), data_state, PinState::Low, PinState::High))
+                .push_back((None, data_state, PinState::Low, PinState::High))
                 .ok();
         }
 
@@ -75,7 +75,7 @@ where
             .ok();
 
         buffer
-            .push_back((None, PinState::Low, PinState::Low, PinState::Low))
+            .push_back((Some(id), PinState::Low, PinState::Low, PinState::Low))
             .ok();
     }
 }

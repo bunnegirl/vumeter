@@ -7,7 +7,8 @@ pub mod monotonic;
 pub mod shift;
 
 pub use crate::hardware::inner::monotonics as time;
-pub use crate::hardware::inner::TimerInstant;
+pub use crate::hardware::inner::TimeDuration;
+pub use crate::hardware::inner::TimeInstant;
 
 use crate::hardware::brightness::*;
 use crate::hardware::control::*;
@@ -16,7 +17,7 @@ use crate::hardware::meter::*;
 use crate::hardware::monotonic::*;
 use crate::hardware::shift::*;
 use crate::runtime::{Message::*, State, Q};
-use fugit::{ExtU32, Instant};
+use fugit::{Duration, ExtU32, Instant};
 use rtt_target::*;
 use stm32f4xx_hal::{gpio::*, pac, prelude::*, timer::Timer};
 
@@ -26,7 +27,8 @@ mod inner {
 
     #[monotonic(binds = TIM2, default = true)]
     type MonotonicTimer = MonoTimer<pac::TIM2, 8_000_000>;
-    pub type TimerInstant = Instant<u32, 1, 8_000_000>;
+    pub type TimeInstant = Instant<u32, 1, 8_000_000>;
+    pub type TimeDuration = Duration<u32, 1, 8_000_000>;
 
     #[shared]
     struct Shared {
@@ -78,12 +80,12 @@ mod inner {
             clock: gpiob.pb7.into_push_pull_output(),
         };
 
-        let key_trigger = gpiob.pb4.into_pull_down_input();
+        let key_trigger = gpioa.pa12.into_pull_down_input();
         let key_register = KeyRegister {
             buffer: ShiftBuffer::new(),
-            data: gpiob.pb3.into_push_pull_output(),
-            latch: gpioa.pa15.into_push_pull_output(),
-            clock: gpioa.pa12.into_push_pull_output(),
+            data: gpiob.pb4.into_push_pull_output(),
+            latch: gpiob.pb3.into_push_pull_output(),
+            clock: gpioa.pa15.into_push_pull_output(),
         };
 
         keypad::spawn().ok();
@@ -168,7 +170,7 @@ mod inner {
 
         keypad.lock(|keypad| keypad.read());
 
-        keypad::spawn_after(50.millis()).ok();
+        keypad::spawn_after(20.millis()).ok();
     }
 
     #[task(
