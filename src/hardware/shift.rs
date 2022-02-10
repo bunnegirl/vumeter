@@ -3,7 +3,16 @@ use heapless::Deque;
 use rtt_target::*;
 use stm32f4xx_hal::hal::digital::v2::{OutputPin, PinState};
 
-pub type ShiftBuffer<Id> = Deque<(Option<Id>, PinState, PinState, PinState), 2000>;
+pub type ShiftBuffer<Id> = Deque<(ShiftState<Id>, PinState, PinState, PinState), 2000>;
+
+pub enum ShiftState<Id> {
+    Empty,
+    Reset(Id),
+    BitOn(Id, usize),
+    BitOff(Id, usize),
+    LatchOn(Id, usize),
+    LatchOff(Id, usize),
+}
 
 pub struct ShiftRegister<const LEN: usize, Id, Data, Latch, Clock> {
     pub buffer: ShiftBuffer<Id>,
@@ -19,7 +28,7 @@ where
     Latch: OutputPin,
     Clock: OutputPin,
 {
-    pub fn clock(&mut self) -> Option<Id> {
+    pub fn clock(&mut self) -> ShiftState<Id> {
         let Self {
             buffer,
             data,
@@ -34,7 +43,7 @@ where
 
             id
         } else {
-            None
+            ShiftState::Empty
         }
     }
 
@@ -43,12 +52,14 @@ where
     }
 
     pub fn write(&mut self, id: Id, mut pattern: usize) {
+        use ShiftState::*;
+
         let Self { buffer, .. } = self;
 
         let mut index = 0;
 
         buffer
-            .push_back((None, PinState::Low, PinState::Low, PinState::Low))
+            .push_back((Reset(id), PinState::Low, PinState::Low, PinState::Low))
             .ok();
 
         while index < LEN {
@@ -58,24 +69,34 @@ where
                 PinState::Low
             };
 
+            buffer
+                .push_back((BitOn(id, index), data_state, PinState::Low, PinState::Low))
+                .ok();
+
+            buffer
+                .push_back((BitOff(id, index), data_state, PinState::Low, PinState::High))
+                .ok();
+
             pattern >>= 1;
             index += 1;
-
-            buffer
-                .push_back((None, data_state, PinState::Low, PinState::Low))
-                .ok();
-
-            buffer
-                .push_back((None, data_state, PinState::Low, PinState::High))
-                .ok();
         }
 
         buffer
-            .push_back((None, PinState::Low, PinState::High, PinState::Low))
+            .push_back((
+                LatchOn(id, index),
+                PinState::Low,
+                PinState::High,
+                PinState::Low,
+            ))
             .ok();
 
         buffer
-            .push_back((Some(id), PinState::Low, PinState::Low, PinState::Low))
+            .push_back((
+                LatchOff(id, index),
+                PinState::Low,
+                PinState::Low,
+                PinState::Low,
+            ))
             .ok();
     }
 }

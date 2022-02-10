@@ -56,14 +56,10 @@ impl Keypad {
         self.register.write(Unassigned(8), 0b0000_0001);
     }
 
-    pub fn write(&mut self) {
-        todo!("write to indicator leds, when we have indicator leds");
-    }
-
     pub fn clock(&mut self) {
         let trigger = &mut self.trigger;
 
-        if let Some(id) = self.register.clock() {
+        if let ShiftState::LatchOff(id, _) = self.register.clock() {
             if trigger.is_high() {
                 if self.debouncer.is_ok(id) {
                     KeypadUpdate(id).send();
